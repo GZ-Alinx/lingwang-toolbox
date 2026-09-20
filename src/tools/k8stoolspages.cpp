@@ -13,6 +13,8 @@
 #include <QFormLayout>
 #include <QScrollArea>
 #include <QTimer>
+
+#include <yaml-cpp/yaml.h>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QHash>
@@ -641,17 +643,49 @@ public:
         ToolPage::setMeta(QStringLiteral("box"), QStringLiteral("K8s 命令生成器"),
                           QStringLiteral("kubectl 可视化生成：查看 / 日志 / 事件 / 调试 / 发布 / RBAC / 集群"));
         auto* top = new QWidget;
-        auto* topLay = new QHBoxLayout(top);
+        auto* topLay = new QVBoxLayout(top);
         topLay->setContentsMargins(0, 0, 0, 0);
         topLay->setSpacing(8);
+
+        auto* row1 = new QWidget;
+        auto* r1 = new QHBoxLayout(row1);
+        r1->setContentsMargins(0, 0, 0, 0);
+        r1->setSpacing(8);
         m_scenario = new QComboBox;
         for (const ScenarioDef& sc : scenarios()) m_scenario->addItem(sc.name);
+        r1->addWidget(new QLabel(QStringLiteral("场景:")));
+        r1->addWidget(m_scenario, 1);
+
+        auto* row2 = new QWidget;
+        auto* r2 = new QHBoxLayout(row2);
+        r2->setContentsMargins(0, 0, 0, 0);
+        r2->setSpacing(8);
+        m_ctx = new QComboBox;                       // 集群上下文（kubeconfig）
+        m_ns = new QComboBox;                        // 命名空间（可选可输）
+        m_ns->setEditable(true);
+        r2->addWidget(new QLabel(QStringLiteral("集群:")));
+        r2->addWidget(m_ctx, 1);
+        r2->addWidget(new QLabel(QStringLiteral("命名空间:")));
+        r2->addWidget(m_ns, 1);
+
+        topLay->addWidget(row1);
+        topLay->addWidget(row2);
         m_desc = new QLabel;
         m_desc->setObjectName(QStringLiteral("pageDesc"));
         m_desc->setWordWrap(true);
-        topLay->addWidget(new QLabel(QStringLiteral("场景:")));
-        topLay->addWidget(m_scenario, 1);
-        body()->addWidget(ui::card(QStringLiteral("场景"), top));
+        topLay->addWidget(m_desc);
+        body()->addWidget(ui::card(QStringLiteral("场景与集群（自动读取 ~/.kube/config）"), top));
+
+        loadKubeconfig();
+        m_regenTimer.setSingleShot(true);
+        m_regenTimer.setInterval(30);
+        connect(&m_regenTimer, &QTimer::timeout, this, &K8sCmdPage::regen);
+        connect(m_ctx, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+            applyCtxNamespace();
+            scheduleRegen();
+        });
+        connect(m_ns, &QComboBox::currentTextChanged, this, [this](const QString&) { scheduleRegen(); });
+        connect(m_ns, &QComboBox::editTextChanged, this, [this](const QString&) { scheduleRegen(); });
 
         m_formHost = new QWidget;
         m_form = new QFormLayout(m_formHost);
@@ -700,11 +734,14 @@ private slots:
                 m_form->addRow(QString(), w);
             else
                 m_form->addRow(f.label + QStringLiteral(":"), w);
+            m_widgets.insert(f.key, w);   // 注册控件映射（regen 读取值的唯一来源）
         }
         m_desc->setText(sc.desc);
         m_lastCmd.clear();   // 切场景强制重刷
         regen();
     }
+    // 防抖统一驱动：任何控件变化 → 30ms 后重生成（合并高频输入，保证可靠刷新）
+    void scheduleRegen() { m_regenTimer.start(); }
     void regen() {
         if (m_scenario->currentIndex() < 0) return;
         const ScenarioDef& sc = scenarios().at(m_scenario->currentIndex());
@@ -717,11 +754,75 @@ private slots:
             else if (auto* s = qobject_cast<QSpinBox*>(w)) v.insert(f.key, QString::number(s->value()));
             else if (auto* e = qobject_cast<QLineEdit*>(w)) v.insert(f.key, e->text().trimmed());
         }
-        const QString next = sc.gen(v).join(QLatin1Char('\n'));
+        // 注入全局集群上下文：ns 统一由「集群」卡片控制（场景内的 ns 字段已隐藏）
+        v.insert(QStringLiteral("ns"), m_ns ? m_ns->currentText().trimmed() : QString());
+        // --context 用 context 名称（currentText）；「（不指定）/（未找到」占位项不注入
+        QString ctx = m_ctx ? m_ctx->currentText().trimmed() : QString();
+        if (ctx.startsWith(QLatin1Char('(')) || ctx.startsWith(QChar(0xFF08)))
+            ctx.clear();
+        QStringList cmds = sc.gen(v);
+        if (!ctx.isEmpty()) {
+            for (QString& c : cmds) {
+                if (c.startsWith(QLatin1String("kubectl")))
+                    c += QStringLiteral(" --context ") + ctx;
+            }
+        }
+        const QString next = cmds.join(QLatin1Char('\n'));
+        m_out->setPlainText(next);                 // 无条件重刷，绝不依赖信号时序
         if (next != m_lastCmd) {
-            m_out->setPlainText(next);
             m_lastCmd = next;
-            flashOutput();   // 命令变化 → 输出区闪烁提示
+            flashOutput();
+        }
+    }
+    // 读取 ~/.kube/config：列出全部集群 context 及其默认命名空间
+    void loadKubeconfig() {
+        QString home = qEnvironmentVariable("USERPROFILE");
+        if (home.isEmpty()) home = qEnvironmentVariable("HOME");
+        const QString path = home + QStringLiteral("/.kube/config");
+        m_ctx->blockSignals(true);
+        m_ctx->clear();
+        m_ctx->addItem(QStringLiteral("（不指定）"), QString());
+        QString current;
+        QStringList nsList{QStringLiteral("default"), QStringLiteral("kube-system"), QStringLiteral("kube-public")};
+        bool loaded = false;
+        try {
+            YAML::Node cfg = YAML::LoadFile(path.toStdString());
+            if (cfg["current-context"])
+                current = QString::fromStdString(cfg["current-context"].as<std::string>());
+            if (cfg["contexts"]) {
+                for (const auto& c : cfg["contexts"]) {
+                    if (!c["name"]) continue;
+                    const QString name = QString::fromStdString(c["name"].as<std::string>());
+                    QString ns = QStringLiteral("default");
+                    if (c["context"] && c["context"]["namespace"])
+                        ns = QString::fromStdString(c["context"]["namespace"].as<std::string>());
+                    m_ctx->addItem(name, ns);
+                    if (!nsList.contains(ns)) nsList << ns;
+                    loaded = true;
+                }
+            }
+        } catch (...) {}
+        if (!loaded) {
+            m_ctx->addItem(QStringLiteral("（未找到 ~/.kube/config，可手填参数）"), QString());
+        } else {
+            const int idx = m_ctx->findText(current);
+            if (idx >= 0) m_ctx->setCurrentIndex(idx);
+        }
+        m_ctx->blockSignals(false);
+        m_ns->blockSignals(true);
+        m_ns->clear();
+        m_ns->addItems(nsList);
+        m_ns->blockSignals(false);
+        applyCtxNamespace();
+    }
+    // 切换集群时把命名空间带成该 context 的默认值
+    void applyCtxNamespace() {
+        if (!m_ctx) return;
+        const QString ns = m_ctx->currentData().toString();
+        if (!ns.isEmpty() && m_ns) {
+            m_ns->blockSignals(true);
+            m_ns->setCurrentText(ns);
+            m_ns->blockSignals(false);
         }
     }
     void flashOutput() {
@@ -733,18 +834,20 @@ private slots:
 
 private:
     QWidget* createWidget(const FieldDef& f) {
+        if (f.key == QLatin1String("ns"))
+            return nullptr;   // 命名空间由「集群」卡片统一控制
         switch (f.ty) {
             case FieldDef::Combo: {
                 auto* c = new QComboBox;
                 c->addItems(f.choices);
                 if (!f.def.isEmpty()) c->setCurrentText(f.def);
-                connect(c, &QComboBox::currentTextChanged, this, &K8sCmdPage::regen);
+                connect(c, &QComboBox::currentTextChanged, this, [this](const QString&) { scheduleRegen(); });
                 return c;
             }
             case FieldDef::Check: {
                 auto* cb = new QCheckBox(f.label);
                 cb->setChecked(f.def == QLatin1String("1"));
-                connect(cb, &QCheckBox::toggled, this, &K8sCmdPage::regen);
+                connect(cb, &QCheckBox::toggled, this, [this](bool) { scheduleRegen(); });
                 return cb;
             }
             case FieldDef::Spin: {
@@ -752,7 +855,7 @@ private:
                 const QStringList parts = f.def.split(QLatin1Char('|'));
                 s->setRange(parts.value(1).toInt(), parts.value(2).toInt());
                 s->setValue(parts.value(0).toInt());
-                connect(s, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { regen(); });
+                connect(s, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { scheduleRegen(); });
                 return s;
             }
             case FieldDef::Line:
@@ -760,13 +863,16 @@ private:
                 auto* e = new QLineEdit;
                 if (!f.def.isEmpty()) e->setText(f.def);
                 if (!f.hint.isEmpty()) e->setPlaceholderText(f.hint);
-                connect(e, &QLineEdit::textChanged, this, [this](const QString&) { regen(); });
+                connect(e, &QLineEdit::textChanged, this, [this](const QString&) { scheduleRegen(); });
                 return e;
             }
         }
     }
 
     QComboBox* m_scenario = nullptr;
+    QComboBox* m_ctx = nullptr;      // 集群上下文（读取 kubeconfig）
+    QComboBox* m_ns = nullptr;       // 命名空间（全局）
+    QTimer m_regenTimer;
     QLabel* m_desc = nullptr;
     QFormLayout* m_form = nullptr;
     QWidget* m_formHost = nullptr;

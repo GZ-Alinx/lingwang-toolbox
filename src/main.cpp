@@ -10,7 +10,7 @@ int main(int argc, char* argv[]) {
     QApplication::setOrganizationName(QStringLiteral("LingWang"));
     QApplication::setApplicationName(QStringLiteral("LingWangToolbox"));
     QApplication::setApplicationDisplayName(QStringLiteral("灵王工具箱"));
-    QApplication::setApplicationVersion(QStringLiteral("1.1.2"));
+    QApplication::setApplicationVersion(QStringLiteral("1.2.0"));
 
     // 界面字体
     QFont uiFont(QStringLiteral("Microsoft YaHei UI"), 10);
