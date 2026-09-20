@@ -18,8 +18,8 @@ cmake --build build || goto :err
 echo [3/4] 部署运行时...
 if exist dist rmdir /s /q dist
 mkdir dist
-copy build\LingWangToolbox.exe dist\ >nul
-windeployqt --release --no-translations --compiler-runtime dist\LingWangToolbox.exe || goto :err
+copy build\lingwtools.exe dist\ >nul
+windeployqt --release --no-translations --compiler-runtime dist\lingwtools.exe || goto :err
 
 echo [4/4] 生成安装包...
 where ISCC >nul 2>nul
@@ -31,8 +31,8 @@ if %errorlevel%==0 (
 
 echo.
 echo 完成！产物：
-echo   dist\LingWangToolbox.exe          （便携版）
-echo   LingWangToolbox-Setup-1.0.0.exe   （安装向导）
+echo   dist\lingwtools.exe               （便携版）
+echo   lingwtools-setup-1.0.2.exe        （安装向导）
 exit /b 0
 
 :err

@@ -4,9 +4,9 @@
 
 #define MyAppName "灵王工具箱"
 #define MyAppNameEn "LingWangToolbox"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "LingWang"
-#define MyAppExeName "LingWangToolbox.exe"
+#define MyAppExeName "lingwtools.exe"
 
 [Setup]
 AppId={{F8A0E7D2-3B44-4C5A-9B6E-1C2D3E4F5A6B}}
@@ -25,7 +25,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
 OutputDir=..
-OutputBaseFilename=LingWangToolbox-Setup-{#MyAppVersion}
+OutputBaseFilename=lingwtools-setup-{#MyAppVersion}
 SetupIconFile=..\resources\icons\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
@@ -43,7 +43,7 @@ Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; GroupDescripti
 Name: "startmenuicon"; Description: "创建开始菜单快捷方式(&S)"; GroupDescription: "附加任务："; Flags: checkedonce unchecked
 
 [Files]
-Source: "..\dist\LingWangToolbox.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\lingwtools.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 [Icons]

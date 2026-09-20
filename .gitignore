@@ -1,9 +1,11 @@
 # 构建产物
 build/
 dist/
-LingWangToolbox-Setup-*.exe
-LingWangToolbox-windows-x64*.zip
-LingWangToolbox-macos-*.dmg
+lingwtools-setup-*.exe
+lingwtools-windows-x64*.zip
+lingwtools-macos-*.dmg
+LingWangToolbox-*.exe
+LingWangToolbox-*.zip
 *.zip
 *.dmg
 

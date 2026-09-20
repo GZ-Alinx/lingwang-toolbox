@@ -1,2 +1,2 @@
-de5f99b4575a7875924cf1fdce9985165e3bcf1b4f668b76e5d9fb22cfc38311 *LingWangToolbox-Setup-1.0.1.exe
-c2dd6704fac327f8e7733011fb7bbcf4f0eba8c101ba9bbf82aa1175849c9147 *LingWangToolbox-windows-x64-portable.zip
+2817f189be5532600006c3c08a5ef6169dd826423320f2d35c087aaa441c2138 *lingwtools-setup-1.0.2.exe
+7758a1086e0187e3e681e5504fe1ef5f7e734c0b16aa80587f16635a66d7a795 *lingwtools-windows-x64-portable.zip

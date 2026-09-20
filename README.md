@@ -46,9 +46,9 @@ Base64（文本 + 文件 + data URI）· URL 编解码 · 进制转换（2/8/10/
 
 | 平台 | 产物 | 说明 |
 |---|---|---|
-| Windows x64 | `LingWangToolbox-Setup-1.0.1.exe` | **安装向导**：可选安装路径、开始菜单/桌面快捷方式，含卸载器 |
-| Windows x64 | `LingWangToolbox-windows-x64-portable.zip` | **绿色便携版**：解压双击即用，不写注册表 |
-| macOS Apple Silicon | `LingWangToolbox-macos-arm64.dmg` | 打开后将 `灵王工具箱.app` 拖入 Applications |
+| Windows x64 | `lingwtools-setup-1.0.2.exe` | **安装向导**：可选安装路径、开始菜单/桌面快捷方式，含卸载器 |
+| Windows x64 | `lingwtools-windows-x64-portable.zip` | **绿色便携版**：解压双击即用，不写注册表 |
+| macOS Apple Silicon | `lingwtools-macos-arm64.dmg` | 打开后将 `灵王工具箱.app` 拖入 Applications |
 
 安装版与便携版功能完全一致；升级时直接运行新版 Setup 覆盖安装即可。
 
@@ -77,8 +77,8 @@ scripts\build_all.bat
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build build
 
-# Windows 生成便携包（替换为你的 Qt 路径）
-windeployqt --release --no-translations --compiler-runtime build/LingWangToolbox.exe
+# Windows 生成便携包（进程名 lingwtools.exe；替换为你的 Qt 路径）
+windeployqt --release --no-translations --compiler-runtime build/lingwtools.exe
 # 生成安装向导（需 Inno Setup 6.5+）
 ISCC scripts/installer.iss
 ```

@@ -39,8 +39,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item build/LingWangToolbox.exe dist/
-          windeployqt --release --no-translations --compiler-runtime dist/LingWangToolbox.exe
+          Copy-Item build/lingwtools.exe dist/
+          windeployqt --release --no-translations --compiler-runtime dist/lingwtools.exe
 
       - name: Build installer (Inno Setup)
         shell: pwsh
@@ -52,14 +52,14 @@ jobs:
 
       - name: Package portable zip
         shell: pwsh
-        run: Compress-Archive -Path dist/* -DestinationPath LingWangToolbox-windows-x64-portable.zip
+        run: Compress-Archive -Path dist/* -DestinationPath lingwtools-windows-x64-portable.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
           path: |
-            LingWangToolbox-Setup-*.exe
-            LingWangToolbox-windows-x64-portable.zip
+            lingwtools-setup-*.exe
+            lingwtools-windows-x64-portable.zip
 
   build-macos:
     name: macOS Apple Silicon (DMG)
@@ -82,7 +82,7 @@ jobs:
         run: cmake --build build
 
       - name: Deploy Qt frameworks (macdeployqt)
-        run: macdeployqt build/LingWangToolbox.app -verbose=1
+        run: macdeployqt build/lingwtools.app -verbose=1
 
       - name: Icons + ad-hoc codesign
         run: |
@@ -92,24 +92,24 @@ jobs:
             double=$((s*2))
             cp resources/icons/icon_${double}x${double}.png appicon.iconset/icon_${s}x${s}@2x.png 2>/dev/null || true
           done
-          iconutil -c icns appicon.iconset -o LingWangToolbox.icns
-          mkdir -p build/LingWangToolbox.app/Contents/Resources
-          cp LingWangToolbox.icns build/LingWangToolbox.app/Contents/Resources/
-          /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile LingWangToolbox" build/LingWangToolbox.app/Contents/Info.plist || true
-          codesign --force --deep -s - build/LingWangToolbox.app
+          iconutil -c icns appicon.iconset -o lingwtools.icns
+          mkdir -p build/lingwtools.app/Contents/Resources
+          cp lingwtools.icns build/lingwtools.app/Contents/Resources/
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile lingwtools" build/lingwtools.app/Contents/Info.plist || true
+          codesign --force --deep -s - build/lingwtools.app
 
       - name: Create DMG
         run: |
           mkdir -p dmgstage
-          cp -R build/LingWangToolbox.app dmgstage/
+          cp -R build/lingwtools.app dmgstage/
           ln -s /Applications dmgstage/Applications
           hdiutil create -volname "灵王工具箱" -srcfolder dmgstage -ov -format UDZO \
-            LingWangToolbox-macos-arm64.dmg
+            lingwtools-macos-arm64.dmg
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos-arm64
-          path: LingWangToolbox-macos-arm64.dmg
+          path: lingwtools-macos-arm64.dmg
 
   release:
     name: Publish Release
@@ -127,7 +127,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            LingWangToolbox-Setup-*.exe
-            LingWangToolbox-windows-x64-portable.zip
-            LingWangToolbox-macos-arm64.dmg
+            lingwtools-setup-*.exe
+            lingwtools-windows-x64-portable.zip
+            lingwtools-macos-arm64.dmg
           generate_release_notes: true

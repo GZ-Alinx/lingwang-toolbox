@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(LingWangToolbox VERSION 1.0.1 LANGUAGES C CXX)
+project(lingwtools VERSION 1.0.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +14,8 @@ endif()
 
 if(MINGW)
   add_compile_options(-Wa,-mbig-obj)
+  # windres 按 UTF-8 解析 .rc，修复中文版本信息乱码
+  set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -c 65001")
 endif()
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Network Svg Concurrent)
@@ -89,24 +91,25 @@ if(WIN32)
   list(APPEND APP_SOURCES resources/app.rc)
 endif()
 
-add_executable(LingWangToolbox WIN32 ${APP_SOURCES} theme.qrc)
+add_executable(lingwtools WIN32 ${APP_SOURCES} theme.qrc)
 
-target_include_directories(LingWangToolbox PRIVATE src 3rdparty/mbedtls/include)
+target_include_directories(lingwtools PRIVATE src 3rdparty/mbedtls/include)
 
-target_link_libraries(LingWangToolbox PRIVATE
+target_link_libraries(lingwtools PRIVATE
   Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent
   yaml-cpp qrencode_core
   mbedcrypto
 )
 
 if(WIN32)
-  target_link_libraries(LingWangToolbox PRIVATE iphlpapi ws2_32 bcrypt)
+  target_link_libraries(lingwtools PRIVATE iphlpapi ws2_32 bcrypt)
 endif()
 if(APPLE)
-  target_link_libraries(LingWangToolbox PRIVATE "-framework Security" "-framework CoreFoundation")
+  target_link_libraries(lingwtools PRIVATE "-framework Security" "-framework CoreFoundation")
 endif()
 
-set_target_properties(LingWangToolbox PROPERTIES
+set_target_properties(lingwtools PROPERTIES
+  OUTPUT_NAME "lingwtools"
   MACOSX_BUNDLE TRUE
   MACOSX_BUNDLE_BUNDLE_NAME "灵王工具箱"
   MACOSX_BUNDLE_GUI_IDENTIFIER "com.lingwang.toolbox"
