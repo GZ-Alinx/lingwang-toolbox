@@ -117,7 +117,7 @@ const ToolMeta* ToolRegistry::find(const QString& id) {
 }
 
 QStringList ToolRegistry::categories() {
-    return {CatNet, CatK8s, CatCodec, CatCrypto, CatText, CatSys};
+    return {CatK8s, CatNet, CatCodec, CatCrypto, CatText, CatSys};   // 容器运维置顶
 }
 
 QColor ToolRegistry::categoryColor(const QString& category) {
