@@ -16,3 +16,4 @@ LingWangToolbox-*.zip
 .DS_Store
 Thumbs.db
 CMakeUserPresets.json
+wiz*.log
