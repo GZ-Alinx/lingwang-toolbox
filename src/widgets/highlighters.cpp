@@ -104,8 +104,33 @@ void CodeHighlighter::rebuildRules() {
     add(QStringLiteral("\"(?:[^\"\\\\]|\\\\.)*\""), p.str);                           // JSON 字符串
     add(QStringLiteral("\\b(?:0x[0-9a-fA-F]+|\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)\\b"), p.num); // 数字
     add(QStringLiteral("\\b(?:true|false|null|True|False|None)\\b"), p.boolean);       // 布尔/空
+    add(QStringLiteral("(?<=[{,])[A-Za-z_][\\w.-]*(?=\\s*:)"), p.key);              // flow map 键 {cpu: 100m}
     add(QStringLiteral("^[ \\t]*-[ \\t]"), p.accent);                                  // YAML 列表
     add(QStringLiteral("^[ \\t]*[^:#\\n]{1,40}(?=:)"), p.key);                         // YAML 键
+    rebuild();
+}
+
+// ---------------- ShellHighlighter ----------------
+void ShellHighlighter::rebuildRules() {
+    m_patterns.clear();
+    m_formats.clear();
+    const Palette p = pal();
+
+    auto add = [this](const QString& pattern, const QColor& color, bool bold = false) {
+        QTextCharFormat fmt;
+        fmt.setForeground(color);
+        if (bold) fmt.setFontWeight(QFont::Bold);
+        m_patterns.append(QRegularExpression(pattern));
+        m_formats.append(fmt);
+    };
+
+    add(QStringLiteral("#[^\\n]*"), p.dim);                                  // 注释
+    add(QStringLiteral("'[^']*'|\"[^\"]*\""), p.str);                        // 引号串
+    add(QStringLiteral("(?<=\\s)--?[A-Za-z][\\w-]*"), p.accent);             // -n / --context 等 flag
+    add(QStringLiteral("\\b\\d+(?:\\.\\d+)?\\b"), p.num);                // 数字
+    add(QStringLiteral("^kubectl\\b"), p.key, true);                         // kubectl
+    add(QStringLiteral("\\b(pods?|deployments?|services?|ingresses?|configmaps?|secrets?|namespaces?|nodes?|serviceaccounts?|clusterroles?|clusterrolebindings?|roles?|rolebindings?|statefulsets?|daemonsets?|jobs|cronjobs|replicasets?|horizontalpodautoscalers?|customresourcedefinitions?|persistentvolumeclaims?|all)\\b"),
+        p.boolean, true);                                                     // 资源类型
     rebuild();
 }
 

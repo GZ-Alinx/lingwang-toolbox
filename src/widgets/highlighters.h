@@ -55,6 +55,15 @@ protected:
     void rebuildRules() override;
 };
 
+// Shell/kubectl 命令高亮（K8s 命令生成器）
+class ShellHighlighter : public ThemedHighlighter {
+    Q_OBJECT
+public:
+    using ThemedHighlighter::ThemedHighlighter;
+protected:
+    void rebuildRules() override;
+};
+
 // 「标签: 值」高亮：标签置灰（IP 查询 / HTTP 响应头 / 哈希输出等）
 class KeyValueHighlighter : public ThemedHighlighter {
     Q_OBJECT

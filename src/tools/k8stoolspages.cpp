@@ -746,7 +746,7 @@ public:
         m_out->setReadOnly(true);
         m_out->setMinimumHeight(100);
         m_out->setPlaceholderText(QStringLiteral("命令将实时生成…"));
-        new CodeHighlighter(m_out->document());
+        new ShellHighlighter(m_out->document());   // kubectl 命令着色
         m_copyBtn = ui::button(QStringLiteral("复制全部"), "primary");
         connect(m_copyBtn, &QPushButton::clicked, this, [this] {
             ui::copyText(m_out->toPlainText());
@@ -763,19 +763,7 @@ public:
         cbLay->addWidget(m_runBtn);
         pageLay->addWidget(ui::card(QStringLiteral("命令 · 参数变化实时更新"), m_out, cmdBtns));
 
-        // 本地执行输出
-        m_execOut = new QPlainTextEdit;
-        m_execOut->setObjectName(QStringLiteral("mono"));
-        m_execOut->setReadOnly(true);
-        m_execOut->setMinimumHeight(160);
-        m_execOut->setPlaceholderText(QStringLiteral("点击「▶ 执行」在本机运行上方命令（需已安装 kubectl 并配置集群）…"));
-        new LogHighlighter(m_execOut->document());
-        m_stopBtn = ui::button(QStringLiteral("停止"));
-        m_stopBtn->setEnabled(false);
-        connect(m_stopBtn, &QPushButton::clicked, this, [this] {
-            if (m_proc && m_proc->state() != QProcess::NotRunning) m_proc->kill();
-        });
-        pageLay->addWidget(ui::card(QStringLiteral("执行输出"), m_execOut, m_stopBtn, true), 1);
+        m_out->setMinimumHeight(200);   // 命令区兼任执行输出控制台
 
         detectKubectl();
 
@@ -813,7 +801,10 @@ private slots:
         regen();
     }
     // 防抖统一驱动：任何控件变化 → 30ms 后重生成（合并高频输入，保证可靠刷新）
-    void scheduleRegen() { m_regenTimer.start(); }
+    void scheduleRegen() {
+        if (m_executing) return;   // 执行期间保持输出视图，结束后任意参数变化即恢复命令
+        m_regenTimer.start();
+    }
     void regen() {
         if (m_scenario->currentIndex() < 0) return;
         const ScenarioDef& sc = scenarios().at(m_scenario->currentIndex());
@@ -921,53 +912,54 @@ private slots:
                 f.close();
                 m_installBtn->setText(QStringLiteral("已下载 %1").arg(ver));
                 m_installBtn->setEnabled(false);
-                m_execOut->appendPlainText(QStringLiteral("# kubectl 已安装到程序目录；若提示找不到命令，请重启工具箱（新 PATH 生效）"));
+                m_out->appendPlainText(QStringLiteral("\n# kubectl 已安装到程序目录；若执行报找不到命令，请重启工具箱"));
                 detectKubectl();
             });
         });
     }
-    // 顺序执行生成的每行命令，流式回显
+    // 执行：输出直接写入命令区（控制台模式）；执行中按钮变「■ 停止」
     void runCommands() {
-        if (m_proc && m_proc->state() != QProcess::NotRunning) return;
-        if (!m_kubectlOk) {
-            m_execOut->setPlainText(QStringLiteral("✗ 未检测到 kubectl，请先点击「一键安装 kubectl」或自行安装"));
+        if (m_executing) {
+            if (m_proc && m_proc->state() != QProcess::NotRunning) m_proc->kill();
             return;
         }
-        const QStringList lines = m_out->toPlainText().split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        if (!m_kubectlOk) {
+            m_out->setPlainText(QStringLiteral("# ✗ 未检测到 kubectl，请先点击「一键安装 kubectl」或自行安装\n# （修改任意参数可恢复命令显示）"));
+            return;
+        }
+        const QStringList lines = m_lastCmd.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
         if (lines.isEmpty()) return;
-        m_execOut->clear();
+        m_out->clear();
         m_queue = lines;
-        m_stopBtn->setEnabled(true);
-        m_runBtn->setEnabled(false);
+        m_executing = true;
+        m_runBtn->setText(QStringLiteral("■ 停止"));
         runNext();
     }
     void runNext() {
-        if (m_queue.isEmpty() || m_stopRequested) {
-            m_stopBtn->setEnabled(false);
-            m_runBtn->setEnabled(true);
-            m_stopRequested = false;
-            m_execOut->appendPlainText(QStringLiteral("—— 执行完成 ——"));
+        if (m_queue.isEmpty()) {
+            m_executing = false;
+            m_runBtn->setText(QStringLiteral("▶ 执行"));
+            m_out->appendPlainText(QStringLiteral("—— 执行完成（修改任意参数恢复命令显示）——"));
             return;
         }
         const QString cmd = m_queue.takeFirst();
-        m_execOut->appendPlainText(QStringLiteral("$ %1").arg(cmd));
+        m_out->appendPlainText(QStringLiteral("$ %1").arg(cmd));
         delete m_proc;
         m_proc = new QProcess(this);
         m_proc->setProcessChannelMode(QProcess::MergedChannels);
         connect(m_proc, &QProcess::readyReadStandardOutput, this, [this] {
             while (m_proc && m_proc->canReadLine())
-                m_execOut->appendPlainText(QString::fromUtf8(m_proc->readLine()).trimmed());
+                m_out->appendPlainText(QString::fromUtf8(m_proc->readLine()).trimmed());
         });
         connect(m_proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
                 [this](int code, QProcess::ExitStatus) {
             if (code != 0)
-                m_execOut->appendPlainText(QStringLiteral("✗ 退出码 %1").arg(code));
+                m_out->appendPlainText(QStringLiteral("✗ 退出码 %1").arg(code));
             runNext();
         });
         const QStringList tokens = tokenify(cmd);
         m_proc->start(tokens.value(0), tokens.mid(1));
     }
-    void stopCmd() { m_stopRequested = true; if (m_proc) m_proc->kill(); }
 
     // 读取 ~/.kube/config：列出全部集群 context 及其默认命名空间
     void loadKubeconfig() {
@@ -1070,13 +1062,11 @@ private:
     QLabel* m_kubectlLbl = nullptr;
     QPushButton* m_installBtn = nullptr;
     QPushButton* m_runBtn = nullptr;
-    QPushButton* m_stopBtn = nullptr;
-    QPlainTextEdit* m_execOut = nullptr;
     QProcess* m_proc = nullptr;
     QNetworkAccessManager m_nam;
     QStringList m_queue;
     bool m_kubectlOk = false;
-    bool m_stopRequested = false;
+    bool m_executing = false;
     QTimer m_regenTimer;
     QLabel* m_desc = nullptr;
     QFormLayout* m_form = nullptr;
@@ -1354,7 +1344,7 @@ public:
         m_out = new QPlainTextEdit;
         m_out->setObjectName(QStringLiteral("mono"));
         m_out->setPlaceholderText(QStringLiteral("选择模板后在此生成，可直接编辑…"));
-        new CodeHighlighter(m_out->document());
+        new ShellHighlighter(m_out->document());   // kubectl 命令着色
         auto* copyBtn = ui::button(QStringLiteral("复制"), "primary");
         connect(copyBtn, &QPushButton::clicked, this, [this] { ui::copyText(m_out->toPlainText()); });
         auto* resetBtn = ui::button(QStringLiteral("重置模板"));

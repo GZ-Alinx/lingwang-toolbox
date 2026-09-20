@@ -1,2 +1,2 @@
-a7b3dab8b1190983315396fd8d4b099686027d40539931bebfadc65a73bb0f92 *lingwtools-setup-1.3.2.exe
-1dc1ed6ec07354ee28034f3801265b73e8bd4182f1be18796277469e891ff28e *lingwtools-windows-x64-portable.zip
+412ef551d72f94ada89c942742eee23d5f4cb19393bb854b2d9706faa57de05b *lingwtools-setup-1.4.0.exe
+d20faf3d383842027c37271e49b2a649372df80f9b294b50a55dea5f04e247e8 *lingwtools-windows-x64-portable.zip
