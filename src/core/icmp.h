@@ -4,7 +4,7 @@
 
 // 跨平台 ICMP：Windows 用 iphlpapi IcmpSendEcho（免管理员），macOS 用 SOCK_DGRAM ICMP（免提权）；
 // 原生方式不可用时自动回退到系统命令（ping/tracert）解析。
-namespace icmp {
+namespace neticmp {
 
 struct PingReply {
     bool success = false;
@@ -29,4 +29,4 @@ void systemPing(const QString& host, int count, int timeoutMs,
 void systemTraceroute(const QString& host, int maxHops,
                       const std::function<void(const QString&)>& onLine, const std::atomic<bool>& cancel);
 
-} // namespace icmp
+} // namespace neticmp

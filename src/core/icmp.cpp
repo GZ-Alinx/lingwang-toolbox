@@ -24,7 +24,7 @@
 #include <cstring>
 #endif
 
-namespace icmp {
+namespace neticmp {
 
 static QString resolveHost(const QString& host, QString* err) {
     QHostAddress addr(host);
@@ -280,4 +280,4 @@ bool traceroute(const QString& host, int maxHops, int timeoutMs, const HopCallba
     return true;
 }
 
-} // namespace icmp
+} // namespace neticmp

@@ -59,7 +59,7 @@ protected:
             bool nativeBroken = false;
             for (int i = 1; i <= count; ++i) {
                 if (cancel.load()) break;
-                icmp::PingReply rep = icmp::pingOnce(host, timeout, 0, static_cast<unsigned short>(i));
+                neticmp::PingReply rep = neticmp::pingOnce(host, timeout, 0, static_cast<unsigned short>(i));
                 if (rep.error.contains(QStringLiteral("不支持")) || rep.error.contains(QStringLiteral("socket"))) {
                     nativeBroken = true;
                     break;
@@ -80,7 +80,7 @@ protected:
             }
             if (nativeBroken || sent == 0) {
                 emit logLine(QStringLiteral("—— 原生 ICMP 不可用，回退系统 ping ——"));
-                icmp::systemPing(host, count, timeout,
+                neticmp::systemPing(host, count, timeout,
                                  [this](const QString& l) { emit logLine(l); }, cancel);
                 return;
             }
@@ -123,7 +123,7 @@ protected:
         const int timeout = m_timeout->value();
         beginJob([this, host, hops, timeout](const std::atomic<bool>& cancel) {
             emit logLine(QStringLiteral("追踪到 %1 （最多 %2 跳）…").arg(host).arg(hops));
-            bool nativeOk = icmp::traceroute(host, hops, timeout,
+            bool nativeOk = neticmp::traceroute(host, hops, timeout,
                                              [this](int hop, const QString& ip, double ms, bool reached) {
                                                  QString line = QStringLiteral("%1\t%2\t%3").arg(hop, 2).arg(ip, 20);
                                                  line += ms >= 0 ? QStringLiteral("%1ms").arg(ms, 0, 'f', ms < 10 ? 2 : 0)
@@ -133,7 +133,7 @@ protected:
                                              }, cancel);
             if (!nativeOk) {
                 emit logLine(QStringLiteral("—— 原生 ICMP 不可用，回退系统 tracert ——"));
-                icmp::systemTraceroute(host, hops, [this](const QString& l) { emit logLine(l); }, cancel);
+                neticmp::systemTraceroute(host, hops, [this](const QString& l) { emit logLine(l); }, cancel);
             } else {
                 emit logLine(QStringLiteral("追踪完成"));
             }

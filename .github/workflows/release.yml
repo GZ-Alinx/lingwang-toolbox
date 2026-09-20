@@ -14,13 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Qt 6.8.2 (MinGW)
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.8.2'
-          arch: 'win64_mingw'
-          tools: 'tools_mingw1310 qt.tools.win64_mingw1310'
-          cache: true
+      - name: Install Qt 6.8.2 (aqt + MinGW)
+        shell: pwsh
+        run: |
+          pip install aqtinstall
+          aqt install-qt windows desktop 6.8.2 win64_mingw -O D:\Qt --base https://mirrors.aliyun.com/qt/
+          aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 -O D:\Qt --base https://mirrors.aliyun.com/qt/
+          Add-Content $env:GITHUB_PATH "D:\Qt.8.2\mingw_64in"
+          Add-Content $env:GITHUB_PATH "D:\Qt\Tools\mingw1310_64in"
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=D:\Qt.8.2\mingw_64"
 
       - name: Configure
         env:
