@@ -15,6 +15,15 @@
 #include <QTimer>
 
 #include <yaml-cpp/yaml.h>
+
+#include <QProcess>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QDir>
+#include <QFile>
+#include <QCoreApplication>
+#include <QRegularExpression>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QHash>
@@ -81,6 +90,28 @@ static const QStringList kRes = {
 
 static const QStringList kOutFmt = {QString(), QStringLiteral("-o wide"), QStringLiteral("-o yaml"),
                                     QStringLiteral("-o json"), QStringLiteral("-o name")};
+
+// 把整条命令拆成参数列表：支持 'xxx' 与 "xxx" 包裹含空格/JSON 的参数
+static QStringList tokenify(const QString& cmd) {
+    QStringList out;
+    const int sp = static_cast<int>(cmd.indexOf(QLatin1Char(' ')));
+    if (sp < 0) return {cmd};
+    out << cmd.left(sp);
+    QString cur;
+    bool inS = false, inD = false, has = false;
+    for (const QChar& ch : cmd.mid(sp + 1)) {
+        if (ch == QLatin1Char('\'') && !inD) { inS = !inS; has = true; continue; }
+        if (ch == QLatin1Char('"') && !inS) { inD = !inD; has = true; continue; }
+        if (ch.isSpace() && !inS && !inD) {
+            if (has) { out << cur; cur.clear(); has = false; }
+            continue;
+        }
+        cur += ch;
+        has = true;
+    }
+    if (has) out << cur;
+    return out;
+}
 
 static const QList<ScenarioDef>& scenarios() {
     static const QList<ScenarioDef> list = [] {
@@ -663,11 +694,16 @@ public:
         m_ctx = new QComboBox;                       // 集群上下文（kubeconfig）
         m_ns = new QComboBox;                        // 命名空间（可选可输）
         m_ns->setEditable(true);
+        m_kubectlLbl = new QLabel;
         r2->addWidget(new QLabel(QStringLiteral("集群:")));
         r2->addWidget(m_ctx, 1);
         r2->addWidget(new QLabel(QStringLiteral("命名空间:")));
         r2->addWidget(m_ns, 1);
 
+        r2->addWidget(m_kubectlLbl);
+        m_installBtn = ui::button(QStringLiteral("一键安装 kubectl"));
+        connect(m_installBtn, &QPushButton::clicked, this, [this] { installKubectl(); });
+        r2->addWidget(m_installBtn);
         topLay->addWidget(row1);
         topLay->addWidget(row2);
         m_desc = new QLabel;
@@ -711,7 +747,30 @@ public:
             m_copyBtn->setText(QStringLiteral("✓ 已复制"));
             QTimer::singleShot(1200, this, [this] { m_copyBtn->setText(QStringLiteral("复制全部")); });
         });
-        body()->addWidget(ui::card(QStringLiteral("命令 · 参数变化实时更新"), m_out, m_copyBtn));
+        m_runBtn = ui::button(QStringLiteral("▶ 执行"), "primary");
+        connect(m_runBtn, &QPushButton::clicked, this, [this] { runCommands(); });
+        auto* cmdBtns = new QWidget;
+        auto* cbLay = new QHBoxLayout(cmdBtns);
+        cbLay->setContentsMargins(0, 0, 0, 0);
+        cbLay->setSpacing(6);
+        cbLay->addWidget(m_copyBtn);
+        cbLay->addWidget(m_runBtn);
+        body()->addWidget(ui::card(QStringLiteral("命令 · 参数变化实时更新"), m_out, cmdBtns));
+
+        // 本地执行输出
+        m_execOut = new QPlainTextEdit;
+        m_execOut->setObjectName(QStringLiteral("mono"));
+        m_execOut->setReadOnly(true);
+        m_execOut->setPlaceholderText(QStringLiteral("点击「▶ 执行」在本机运行上方命令（需已安装 kubectl 并配置集群）…"));
+        new LogHighlighter(m_execOut->document());
+        m_stopBtn = ui::button(QStringLiteral("停止"));
+        m_stopBtn->setEnabled(false);
+        connect(m_stopBtn, &QPushButton::clicked, this, [this] {
+            if (m_proc && m_proc->state() != QProcess::NotRunning) m_proc->kill();
+        });
+        body()->addWidget(ui::card(QStringLiteral("执行输出"), m_execOut, m_stopBtn, true), 1);
+
+        detectKubectl();
 
         connect(m_scenario, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, &K8sCmdPage::buildForm);
@@ -774,6 +833,129 @@ private slots:
             flashOutput();
         }
     }
+    // 检测本机 kubectl（执行能力的前提）
+    void detectKubectl() {
+        QProcess p;
+        p.start(QStringLiteral("kubectl"), {QStringLiteral("version"), QStringLiteral("--client=true")});
+        QString ver;
+        if (p.waitForFinished(3000) && p.exitCode() == 0) {
+            const QString out = QString::fromUtf8(p.readAllStandardOutput());
+            // 兼容两种输出：旧版 GitVersion:"v1.x" 与新版（yaml）gitVersion: v1.x
+            static const QRegularExpression re(QStringLiteral("[gG]itVersion:?\"?\s*v([0-9.]+)\"?"));
+            const auto m = re.match(out);
+            ver = m.hasMatch() ? m.captured(1) : QStringLiteral("?");
+        }
+        m_kubectlOk = !ver.isEmpty();
+        m_kubectlLbl->setText(m_kubectlOk
+                                  ? QStringLiteral("kubectl v%1 ✓").arg(ver)
+                                  : QStringLiteral("kubectl 未安装"));
+        m_kubectlLbl->setStyleSheet(m_kubectlOk
+                                        ? QStringLiteral("color:#3FB950;")
+                                        : QStringLiteral("color:#F85149;"));
+        m_installBtn->setVisible(!m_kubectlOk);
+    }
+    // 一键下载安装 kubectl（dl.k8s.io 稳定版，放入程序目录）
+    void installKubectl() {
+        m_installBtn->setEnabled(false);
+        m_installBtn->setText(QStringLiteral("获取版本号…"));
+        QNetworkRequest req{QUrl(QStringLiteral("https://dl.k8s.io/release/stable.txt"))};
+        req.setTransferTimeout(15000);
+        auto* reply = m_nam.get(req);
+        connect(reply, &QNetworkReply::finished, this, [this, reply] {
+            reply->deleteLater();
+            const QString ver = QString::fromUtf8(reply->readAll()).trimmed();
+            if (reply->error() != QNetworkReply::NoError || !ver.startsWith(QLatin1Char('v'))) {
+                m_installBtn->setEnabled(true);
+                m_installBtn->setText(QStringLiteral("安装失败，点击重试"));
+                m_kubectlLbl->setText(QStringLiteral("下载失败（网络原因），也可手动安装"));
+                return;
+            }
+#ifdef Q_OS_WIN
+            const QString url = QStringLiteral("https://dl.k8s.io/release/%1/bin/windows/amd64/kubectl.exe").arg(ver);
+#elif defined(Q_OS_MAC)
+            const QString url = QStringLiteral("https://dl.k8s.io/release/%1/bin/darwin/arm64/kubectl").arg(ver);
+#else
+            const QString url = QStringLiteral("https://dl.k8s.io/release/%1/bin/linux/amd64/kubectl").arg(ver);
+#endif
+            m_installBtn->setText(QStringLiteral("下载中…"));
+            QNetworkRequest r2{QUrl(url)};
+            r2.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+            auto* dl = m_nam.get(r2);
+            connect(dl, &QNetworkReply::downloadProgress, this, [this](qint64 done, qint64 total) {
+                if (total > 0)
+                    m_installBtn->setText(QStringLiteral("下载中 %1%…").arg(done * 100 / total));
+            });
+            connect(dl, &QNetworkReply::finished, this, [this, dl, ver] {
+                dl->deleteLater();
+                const QByteArray data = dl->readAll();
+                const QString path = QCoreApplication::applicationDirPath() + QStringLiteral("/kubectl");
+#ifdef Q_OS_WIN
+                const QString finalPath = path + QStringLiteral(".exe");
+#else
+                const QString finalPath = path;
+#endif
+                if (dl->error() != QNetworkReply::NoError || data.size() < 1000000) {
+                    m_installBtn->setEnabled(true);
+                    m_installBtn->setText(QStringLiteral("安装失败，点击重试"));
+                    return;
+                }
+                QFile f(finalPath);
+                if (!f.open(QIODevice::WriteOnly) || f.write(data) != data.size()) {
+                    m_installBtn->setEnabled(true);
+                    m_installBtn->setText(QStringLiteral("写入失败，点击重试"));
+                    return;
+                }
+                f.close();
+                m_installBtn->setText(QStringLiteral("已下载 %1").arg(ver));
+                m_installBtn->setEnabled(false);
+                m_execOut->appendPlainText(QStringLiteral("# kubectl 已安装到程序目录；若提示找不到命令，请重启工具箱（新 PATH 生效）"));
+                detectKubectl();
+            });
+        });
+    }
+    // 顺序执行生成的每行命令，流式回显
+    void runCommands() {
+        if (m_proc && m_proc->state() != QProcess::NotRunning) return;
+        if (!m_kubectlOk) {
+            m_execOut->setPlainText(QStringLiteral("✗ 未检测到 kubectl，请先点击「一键安装 kubectl」或自行安装"));
+            return;
+        }
+        const QStringList lines = m_out->toPlainText().split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        if (lines.isEmpty()) return;
+        m_execOut->clear();
+        m_queue = lines;
+        m_stopBtn->setEnabled(true);
+        m_runBtn->setEnabled(false);
+        runNext();
+    }
+    void runNext() {
+        if (m_queue.isEmpty() || m_stopRequested) {
+            m_stopBtn->setEnabled(false);
+            m_runBtn->setEnabled(true);
+            m_stopRequested = false;
+            m_execOut->appendPlainText(QStringLiteral("—— 执行完成 ——"));
+            return;
+        }
+        const QString cmd = m_queue.takeFirst();
+        m_execOut->appendPlainText(QStringLiteral("$ %1").arg(cmd));
+        delete m_proc;
+        m_proc = new QProcess(this);
+        m_proc->setProcessChannelMode(QProcess::MergedChannels);
+        connect(m_proc, &QProcess::readyReadStandardOutput, this, [this] {
+            while (m_proc && m_proc->canReadLine())
+                m_execOut->appendPlainText(QString::fromUtf8(m_proc->readLine()).trimmed());
+        });
+        connect(m_proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+                [this](int code, QProcess::ExitStatus) {
+            if (code != 0)
+                m_execOut->appendPlainText(QStringLiteral("✗ 退出码 %1").arg(code));
+            runNext();
+        });
+        const QStringList tokens = tokenify(cmd);
+        m_proc->start(tokens.value(0), tokens.mid(1));
+    }
+    void stopCmd() { m_stopRequested = true; if (m_proc) m_proc->kill(); }
+
     // 读取 ~/.kube/config：列出全部集群 context 及其默认命名空间
     void loadKubeconfig() {
         QString home = qEnvironmentVariable("USERPROFILE");
@@ -872,6 +1054,16 @@ private:
     QComboBox* m_scenario = nullptr;
     QComboBox* m_ctx = nullptr;      // 集群上下文（读取 kubeconfig）
     QComboBox* m_ns = nullptr;       // 命名空间（全局）
+    QLabel* m_kubectlLbl = nullptr;
+    QPushButton* m_installBtn = nullptr;
+    QPushButton* m_runBtn = nullptr;
+    QPushButton* m_stopBtn = nullptr;
+    QPlainTextEdit* m_execOut = nullptr;
+    QProcess* m_proc = nullptr;
+    QNetworkAccessManager m_nam;
+    QStringList m_queue;
+    bool m_kubectlOk = false;
+    bool m_stopRequested = false;
     QTimer m_regenTimer;
     QLabel* m_desc = nullptr;
     QFormLayout* m_form = nullptr;
