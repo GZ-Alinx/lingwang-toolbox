@@ -18,6 +18,11 @@ VersionInfoVersion={#MyAppVersion}.0
 VersionInfoDescription={#MyAppName} 安装程序
 ; 默认安装到 Program Files（所有用户）或用户目录（仅当前用户），向导中可自行修改路径
 DefaultDirName={autopf}\{#MyAppNameEn}
+; 关键：显式禁用“自动跳过目录页”。Inno 6.3+ 在检测到旧版本（升级安装）时会
+; 自动精简向导流程，导致用户无法选择安装目录——必须显式关掉这一行为
+DisableDirPage=no
+DisableReadyPage=no
+UsePreviousAppDir=yes
 DirExistsWarning=no
 AppendDefaultDirName=no
 PrivilegesRequiredOverridesAllowed=dialog commandline
@@ -39,8 +44,9 @@ Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; GroupDescription: "附加任务："; Flags: checkedonce
-Name: "startmenuicon"; Description: "创建开始菜单快捷方式(&S)"; GroupDescription: "附加任务："; Flags: checkedonce unchecked
+; 不用 checkedonce：升级安装时同样展示快捷方式选项
+Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; GroupDescription: "附加任务："
+Name: "startmenuicon"; Description: "创建开始菜单快捷方式(&S)"; GroupDescription: "附加任务："; Flags: unchecked
 
 [Files]
 Source: "..\dist\lingwtools.exe"; DestDir: "{app}"; Flags: ignoreversion
