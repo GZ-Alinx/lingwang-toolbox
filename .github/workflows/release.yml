@@ -20,14 +20,14 @@ jobs:
           pip install aqtinstall
           aqt install-qt windows desktop 6.8.2 win64_mingw -O D:\Qt --base https://mirrors.aliyun.com/qt/
           aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 -O D:\Qt --base https://mirrors.aliyun.com/qt/
-          Add-Content $env:GITHUB_PATH "D:\Qt.8.2\mingw_64in"
-          Add-Content $env:GITHUB_PATH "D:\Qt\Tools\mingw1310_64in"
-          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=D:\Qt.8.2\mingw_64"
+          Add-Content $env:GITHUB_PATH "D:\Qt\6.8.2\mingw_64\bin"
+          Add-Content $env:GITHUB_PATH "D:\Qt\Tools\mingw1310_64\bin"
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=D:\Qt\6.8.2\mingw_64"
 
       - name: Configure
         env:
-          CC: D:\Qt\Tools\mingw1310_64in\gcc.exe
-          CXX: D:\Qt\Tools\mingw1310_64in\g++.exe
+          CC: D:\Qt\Tools\mingw1310_64\bin\gcc.exe
+          CXX: D:\Qt\Tools\mingw1310_64\bin\g++.exe
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_POLICY_VERSION_MINIMUM=3.5
