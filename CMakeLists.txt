@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(LingWangToolbox VERSION 1.0.0 LANGUAGES C CXX)
+project(LingWangToolbox VERSION 1.0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -71,6 +71,7 @@ set(APP_SOURCES
   src/widgets/toolpage.cpp
   src/widgets/flowlayout.cpp
   src/widgets/collapsiblesection.cpp
+  src/widgets/highlighters.cpp
   src/core/codecs.cpp
   src/core/texttools.cpp
   src/core/nettools.cpp

@@ -1,5 +1,6 @@
 #include "pages.h"
 #include "widgets/toolpage.h"
+#include "widgets/highlighters.h"
 #include "core/nettools.h"
 #include "core/icmp.h"
 #include "core/async.h"
@@ -330,6 +331,8 @@ public:
         m_respBody = new QPlainTextEdit;
         m_respBody->setObjectName(QStringLiteral("mono"));
         m_respBody->setReadOnly(true);
+        new CodeHighlighter(m_respBody->document());
+        new KeyValueHighlighter(m_respHeaders->document());
         auto* copyBtn = ui::button(QStringLiteral("复制响应体"));
         connect(copyBtn, &QPushButton::clicked, this, [this] { ui::copyText(m_respBody->toPlainText()); });
         body()->addWidget(ui::card(QStringLiteral("响应"), m_respBody, copyBtn, true), 1);

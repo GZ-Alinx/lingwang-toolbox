@@ -4,6 +4,7 @@
 #include "widgets/toolpage.h"
 #include "widgets/flowlayout.h"
 #include "widgets/collapsiblesection.h"
+#include "widgets/highlighters.h"
 
 #include <QWidget>
 #include <QStackedWidget>
@@ -321,9 +322,11 @@ void MainWindow::toggleTheme() {
 }
 
 void MainWindow::applyTheme(bool dark) {
+    hl::setDark(dark);
     QFile f(dark ? QStringLiteral(":/theme/dark.qss") : QStringLiteral(":/theme/light.qss"));
     if (f.open(QIODevice::ReadOnly | QIODevice::Text))
         qApp->setStyleSheet(QString::fromUtf8(f.readAll()));
+    hl::rehighlightAll();   // 所有高亮器按新主题重配色
 }
 
 void MainWindow::showAbout() {

@@ -11,6 +11,7 @@
 #include <QStyle>
 #include <QFile>
 #include <QGraphicsDropShadowEffect>
+#include "highlighters.h"
 
 namespace ui {
 
@@ -186,6 +187,7 @@ TextToolPage::TextToolPage(const QList<Action>& actions, bool live, bool hasInpu
     m_output->setObjectName(QStringLiteral("mono"));
     m_output->setReadOnly(true);
     m_output->setPlaceholderText(QStringLiteral("结果将显示在这里…"));
+    new CodeHighlighter(m_output->document());   // JSON/YAML/SQL 语法着色
     auto* copyBtn = ui::button(QStringLiteral("复制"));
     connect(copyBtn, &QPushButton::clicked, this, [this] { ui::copyText(m_output->toPlainText()); });
     body()->addWidget(ui::card(QStringLiteral("输出"), m_output, copyBtn, /*stretchInner*/ true), 1);
@@ -265,6 +267,7 @@ StreamPage::StreamPage() {
     m_log->setObjectName(QStringLiteral("mono"));
     m_log->setReadOnly(true);
     m_log->setMaximumBlockCount(5000);
+    new LogHighlighter(m_log->document());   // ✓/✗ 日志着色
     body()->addWidget(ui::card(QStringLiteral("结果"), m_log, nullptr, true), 1);
 
     // 跨线程日志与状态：工作线程 emit → 队列投递到主线程

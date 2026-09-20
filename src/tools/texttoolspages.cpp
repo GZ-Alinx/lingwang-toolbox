@@ -1,5 +1,6 @@
 #include "pages.h"
 #include "widgets/toolpage.h"
+#include "widgets/highlighters.h"
 #include "core/texttools.h"
 #include "iconprovider.h"
 
@@ -256,7 +257,7 @@ public:
 protected:
     void run(const QString&) override {
         const QString pat = m_pattern->text();
-        if (pat.isEmpty()) { outputEdit()->clear(); return; }
+        if (pat.isEmpty()) { outputEdit()->clear(); inputEdit()->setExtraSelections({}); return; }
         QRegularExpression::PatternOptions opts = QRegularExpression::NoPatternOption;
         if (m_case->isChecked()) opts |= QRegularExpression::CaseInsensitiveOption;
         if (m_multi->isChecked()) opts |= QRegularExpression::MultilineOption;
@@ -267,9 +268,19 @@ protected:
         auto it = re.globalMatch(text);
         QStringList out;
         int count = 0;
+        QList<QTextEdit::ExtraSelection> sels;
+        QTextDocument* doc = inputEdit()->document();
         while (it.hasNext() && count < 1000) {
             auto m = it.next();
             ++count;
+            if (count <= 500 && m.capturedLength() > 0) {
+                QTextEdit::ExtraSelection sel;
+                sel.cursor = QTextCursor(doc);
+                sel.cursor.setPosition(static_cast<int>(m.capturedStart()));
+                sel.cursor.setPosition(static_cast<int>(m.capturedEnd()), QTextCursor::KeepAnchor);
+                sel.format.setBackground(QColor(79, 140, 255, 70));
+                sels.append(sel);
+            }
             out << QStringLiteral("#%1 [位置 %2-%3] %4")
                        .arg(count).arg(m.capturedStart()).arg(m.capturedEnd())
                        .arg(m.captured(0));
@@ -278,6 +289,7 @@ protected:
                 out << QStringLiteral("    组%1: %2").arg(g).arg(cap.isNull() ? QStringLiteral("（未匹配）") : cap);
             }
         }
+        inputEdit()->setExtraSelections(sels);   // 输入区高亮所有命中片段
         showResult(out.isEmpty() ? QStringLiteral("（无匹配）") : out.join(QLatin1Char('\n')),
                    QStringLiteral("共 %1 处匹配").arg(count));
     }
@@ -297,6 +309,7 @@ public:
         m_sideA->setFixedHeight(150);
         addOptionWidget(m_sideA);
         inputEdit()->setPlaceholderText(QStringLiteral("新版本（与上方原始版本对比）…"));
+        new DiffHighlighter(outputEdit()->document());
     }
 protected:
     void run(const QString&) override {
@@ -309,26 +322,6 @@ protected:
             else out << QStringLiteral("  %1").arg(line.text);
         }
         showResult(out.join(QLatin1Char('\n')), QStringLiteral("对比完成"));
-        // 高亮 +/-
-        highlight();
-    }
-    void highlight() {
-        QList<QTextEdit::ExtraSelection> sels;
-        QTextDocument* doc = outputEdit()->document();
-        QTextCharFormat addFmt, delFmt;
-        addFmt.setForeground(QColor(0x3F, 0xB9, 0x50));
-        addFmt.setBackground(QColor(63, 185, 80, 30));
-        delFmt.setForeground(QColor(0xF8, 0x51, 0x49));
-        delFmt.setBackground(QColor(248, 81, 73, 30));
-        for (QTextBlock it = doc->begin(); it.isValid(); it = it.next()) {
-            const QString t = it.text();
-            if (!t.startsWith(QLatin1Char('+')) && !t.startsWith(QLatin1Char('-'))) continue;
-            QTextEdit::ExtraSelection sel;
-            sel.cursor = QTextCursor(it);
-            sel.format = t.startsWith(QLatin1Char('+')) ? addFmt : delFmt;
-            sels.append(sel);
-        }
-        outputEdit()->setExtraSelections(sels);
     }
     QPlainTextEdit* m_sideA;
 };
