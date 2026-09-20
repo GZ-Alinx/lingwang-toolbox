@@ -18,6 +18,11 @@
 #include <QShortcut>
 #include <QSettings>
 #include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QStyle>
 #include <QMouseEvent>
 #include <QFile>
@@ -332,11 +337,49 @@ void MainWindow::applyTheme(bool dark) {
 }
 
 void MainWindow::showAbout() {
-    QMessageBox::about(this, QStringLiteral("关于 灵王工具箱"),
-                       QStringLiteral("<h3>灵王工具箱 v%1</h3>"
-                                      "<p>开发 · 运维 · 网络一站式工具箱</p>"
-                                      "<p>基于 Qt %2 构建</p>")
-                           .arg(QCoreApplication::applicationVersion(), QString::fromLatin1(qVersion())));
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("关于 灵王工具箱"));
+    box.setTextFormat(Qt::RichText);
+    box.setText(QStringLiteral("<h3>灵王工具箱 v%1</h3>"
+                               "<p>开发 · 运维 · 网络一站式工具箱（%2 个工具）</p>"
+                               "<p>基于 Qt %3 构建 · MIT 开源</p>"
+                               "<p><a href=\"https://github.com/GZ-Alinx/lingwang-toolbox\">GitHub 仓库 / 下载最新版</a></p>")
+                    .arg(QCoreApplication::applicationVersion())
+                    .arg(ToolRegistry::all().size())
+                    .arg(QString::fromLatin1(qVersion())));
+    QPushButton* check = box.addButton(QStringLiteral("检查更新"), QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Ok);
+    box.exec();
+    if (box.clickedButton() == check) {
+        auto* nam = new QNetworkAccessManager(this);
+        QNetworkRequest req{QUrl(QStringLiteral("https://api.github.com/repos/GZ-Alinx/lingwang-toolbox/releases/latest"))};
+        req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("lingwtools"));
+        req.setTransferTimeout(10000);
+        auto* reply = nam->get(req);
+        connect(reply, &QNetworkReply::finished, this, [this, reply, nam] {
+            reply->deleteLater();
+            nam->deleteLater();
+            if (reply->error() != QNetworkReply::NoError) {
+                QMessageBox::information(this, QStringLiteral("检查更新"),
+                                          QStringLiteral("网络失败：%1\n可手动访问 GitHub Releases 页面。").arg(reply->errorString()));
+                return;
+            }
+            const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+            const QString tag = doc.object().value(QStringLiteral("tag_name")).toString();
+            const QString cur = QStringLiteral("v") + QCoreApplication::applicationVersion();
+            if (tag.isEmpty()) {
+                QMessageBox::information(this, QStringLiteral("检查更新"), QStringLiteral("未获取到版本信息"));
+            } else if (tag == cur) {
+                QMessageBox::information(this, QStringLiteral("检查更新"),
+                                          QStringLiteral("✓ 已是最新版本（%1）").arg(cur));
+            } else {
+                QMessageBox::information(this, QStringLiteral("检查更新"),
+                                          QStringLiteral("发现新版本 %1（当前 %2）\n\n请到 GitHub Releases 下载：\n"
+                                                         "https://github.com/GZ-Alinx/lingwang-toolbox/releases/latest")
+                                              .arg(tag, cur));
+            }
+        });
+    }
 }
 
 void MainWindow::applySearch(const QString& text) {

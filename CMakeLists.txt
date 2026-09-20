@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(lingwtools VERSION 1.4.1 LANGUAGES C CXX)
+project(lingwtools VERSION 1.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -99,7 +99,7 @@ target_include_directories(lingwtools PRIVATE src 3rdparty/mbedtls/include)
 target_link_libraries(lingwtools PRIVATE
   Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent
   yaml-cpp qrencode_core
-  mbedcrypto
+  mbedtls mbedx509 mbedcrypto
 )
 
 if(WIN32)

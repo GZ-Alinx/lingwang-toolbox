@@ -14,6 +14,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QElapsedTimer>
+#include <QFile>
 
 namespace {
 
@@ -239,6 +240,90 @@ private:
     QLabel* m_chip = nullptr;
 };
 
+
+
+// ---------- SSL 证书查看 ----------
+class CertPage final : public ToolPage {
+    Q_OBJECT
+public:
+    CertPage() {
+        ToolPage::setMeta(QStringLiteral("lock"), QStringLiteral("SSL 证书查看"),
+                          QStringLiteral("解析 PEM 证书：主题/颁发者/有效期/签名算法/SAN，到期预警"));
+        auto* top = new QWidget;
+        auto* tl = new QHBoxLayout(top);
+        tl->setContentsMargins(0, 0, 0, 0);
+        tl->setSpacing(8);
+        auto* pick = ui::button(QStringLiteral("打开证书文件…"), "primary");
+        connect(pick, &QPushButton::clicked, this, [this] {
+            QString p = QFileDialog::getOpenFileName(this, QStringLiteral("选择证书"),
+                                                     QString(), QStringLiteral("证书 (*.crt *.pem *.cer);;所有文件 (*)"));
+            if (p.isEmpty()) return;
+            QFile f(p);
+            if (f.open(QIODevice::ReadOnly)) {
+                m_input->setPlainText(QString::fromUtf8(f.readAll()));
+                parse();
+            }
+        });
+        auto* parseBtn = ui::button(QStringLiteral("解析"));
+        connect(parseBtn, &QPushButton::clicked, this, [this] { parse(); });
+        auto* clearBtn = ui::button(QStringLiteral("清空"));
+        connect(clearBtn, &QPushButton::clicked, this, [this] { m_input->clear(); m_out->clear(); m_chip->hide(); });
+        tl->addWidget(pick);
+        tl->addWidget(parseBtn);
+        tl->addWidget(clearBtn);
+        tl->addStretch();
+        m_chip = ui::chip();
+        tl->addWidget(m_chip);
+        body()->addWidget(ui::card(QStringLiteral("证书（粘贴 PEM 或打开文件）"), top));
+
+        m_input = new QPlainTextEdit;
+        m_input->setObjectName(QStringLiteral("mono"));
+        m_input->setPlaceholderText(QStringLiteral("粘贴 PEM 证书（-----BEGIN CERTIFICATE----- 开头）…"));
+        m_input->setFixedHeight(140);
+        body()->addWidget(ui::card(QStringLiteral("PEM 内容"), m_input));
+
+        m_out = new QPlainTextEdit;
+        m_out->setObjectName(QStringLiteral("mono"));
+        m_out->setReadOnly(true);
+        auto* copyBtn = ui::button(QStringLiteral("复制"));
+        connect(copyBtn, &QPushButton::clicked, this, [this] { ui::copyText(m_out->toPlainText()); });
+        body()->addWidget(ui::card(QStringLiteral("解析结果"), m_out, copyBtn, true), 1);
+    }
+private:
+    void parse() {
+        const QByteArray pem = m_input->toPlainText().toUtf8();
+        if (pem.trimmed().isEmpty()) { ui::setChip(m_chip, QStringLiteral("请先粘贴证书"), QStringLiteral("info")); return; }
+        crypto::CertInfo c = crypto::certParse(pem);
+        if (!c.ok) {
+            m_out->clear();
+            ui::setChip(m_chip, c.error, QStringLiteral("err"));
+            return;
+        }
+        QStringList out;
+        out << QStringLiteral("主题 Subject:    %1").arg(c.subject);
+        out << QStringLiteral("颁发者 Issuer:    %1").arg(c.issuer);
+        out << QStringLiteral("序列号 Serial:    %1").arg(c.serial);
+        out << QStringLiteral("签名算法:        %1").arg(c.sigAlg);
+        out << QStringLiteral("公钥:            %1").arg(c.pubkey);
+        out << QStringLiteral("生效时间:        %1 UTC").arg(c.notBefore.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")));
+        out << QStringLiteral("到期时间:        %1 UTC").arg(c.notAfter.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")));
+        if (!c.san.isEmpty())
+            out << QStringLiteral("SAN 域名:        %1").arg(c.san.join(QStringLiteral(", ")));
+        m_out->setPlainText(out.join(QLatin1Char('\n')));
+        if (c.daysLeft < 0)
+            ui::setChip(m_chip, QStringLiteral("✗ 已过期 %1 天").arg(-c.daysLeft), QStringLiteral("err"));
+        else if (c.daysLeft <= 7)
+            ui::setChip(m_chip, QStringLiteral("⚠ 仅剩 %1 天，请尽快更换！").arg(c.daysLeft), QStringLiteral("err"));
+        else if (c.daysLeft <= 30)
+            ui::setChip(m_chip, QStringLiteral("⚠ 剩余 %1 天，建议规划更换").arg(c.daysLeft), QStringLiteral("info"));
+        else
+            ui::setChip(m_chip, QStringLiteral("✓ 有效，剩余 %1 天").arg(c.daysLeft), QStringLiteral("ok"));
+    }
+    QPlainTextEdit* m_input = nullptr;
+    QPlainTextEdit* m_out = nullptr;
+    QLabel* m_chip = nullptr;
+};
+
 } // namespace
 
 namespace pages {
@@ -246,6 +331,7 @@ ToolPage* createHash() { return new HashPage; }
 ToolPage* createFileHash() { return new FileHashPage; }
 ToolPage* createAes() { return new AesPage; }
 ToolPage* createRsa() { return new RsaPage; }
+ToolPage* createCert() { return new CertPage; }
 } // namespace pages
 
 #include "cryptoolspages.moc"

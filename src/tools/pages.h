@@ -24,6 +24,7 @@ ToolPage* createHtmlEntity();
 ToolPage* createHash();
 ToolPage* createAes();
 ToolPage* createRsa();
+ToolPage* createCert();
 ToolPage* createFileHash();
 // 文本/开发
 ToolPage* createRandom();

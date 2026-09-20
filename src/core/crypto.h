@@ -1,6 +1,8 @@
 #pragma once
 #include <QString>
 #include <QByteArray>
+#include <QDateTime>
+#include <QStringList>
 
 namespace crypto {
 
@@ -22,5 +24,16 @@ AesResult aesDecrypt(const QString& cipherText, const QString& keyText, const QS
 // ---------- RSA ----------
 struct RsaResult { bool ok = false; QString error, privateKey, publicKey; };
 RsaResult rsaGenerate(int bits);
+
+// ---------- X.509 证书解析（SSL 证书查看器） ----------
+struct CertInfo {
+    bool ok = false;
+    QString error;
+    QString subject, issuer, serial, sigAlg, pubkey;
+    QDateTime notBefore, notAfter;
+    int daysLeft = 0;        // 负数=已过期
+    QStringList san;         // SAN 域名
+};
+CertInfo certParse(const QByteArray& pem);
 
 } // namespace crypto

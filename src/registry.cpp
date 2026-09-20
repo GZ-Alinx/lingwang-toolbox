@@ -64,6 +64,8 @@ QList<ToolMeta>& ToolRegistry::all() {
             {"aes", "加密", "解密", "encrypt", "decrypt"}, &pages::createAes);
         add(QStringLiteral("rsa"), QStringLiteral("RSA 密钥生成"), QStringLiteral("生成 RSA 公私钥对（PEM）"), CatCrypto, QStringLiteral("lock"),
             {"rsa", "密钥", "key", "公钥", "私钥"}, &pages::createRsa);
+        add(QStringLiteral("cert"), QStringLiteral("SSL 证书查看"), QStringLiteral("解析 PEM 证书与到期预警（主题/颁发者/SAN）"), CatCrypto, QStringLiteral("lock"),
+            {"ssl", "证书", "cert", "pem", "tls", "https", "x509"}, &pages::createCert);
 
         // ---------- 文本开发 ----------
         add(QStringLiteral("random"), QStringLiteral("随机字符串"), QStringLiteral("密码/随机串批量生成"), CatText, QStringLiteral("zap"),

@@ -472,6 +472,92 @@ static const QList<ScenarioDef>& scenarios() {
             };
             s << sc;
         }
+        // ---- 创建 · TLS 证书密钥 ----
+        {
+            ScenarioDef sc;
+            sc.name = QStringLiteral("创建 · TLS 证书密钥 (secret tls)");
+            sc.desc = QStringLiteral("从证书文件创建 TLS Secret（Ingress https 引用）；路径为本地文件名");
+            sc.fields = {
+                line("name", "Secret 名称", QStringLiteral("my-app-tls")),
+                line("cert", "证书文件 (cert)", QStringLiteral("tls.crt"), "如 ./tls.crt 或绝对路径"),
+                line("key", "私钥文件 (key)", QStringLiteral("tls.key"), "如 ./tls.key 或绝对路径"),
+                line("ns", "命名空间", QStringLiteral("default"))};
+            sc.gen = [](const QHash<QString, QString>& v) {
+                return QStringList{QStringLiteral("kubectl create secret tls %1 --cert=%2 --key=%3%4")
+                                       .arg(V(v, "name"), V(v, "cert"), V(v, "key"), nsArg(V(v, "ns")))};
+            };
+            s << sc;
+        }
+        // ---- 创建 · 镜像仓库凭据 ----
+        {
+            ScenarioDef sc;
+            sc.name = QStringLiteral("创建 · 镜像仓库凭据 (docker-registry)");
+            sc.desc = QStringLiteral("私有镜像拉取凭据，配合 Pod imagePullSecrets 使用");
+            sc.fields = {
+                line("name", "Secret 名称", QStringLiteral("regcred")),
+                line("server", "仓库地址", QStringLiteral("registry.example.com")),
+                line("user", "用户名", QStringLiteral("admin")),
+                line("pass", "密码/Token", QStringLiteral("change-me")),
+                line("email", "邮箱（可空）", QString()),
+                line("ns", "命名空间", QStringLiteral("default"))};
+            sc.gen = [](const QHash<QString, QString>& v) {
+                QString cmd = QStringLiteral("kubectl create secret docker-registry %1 --docker-server=%2 --docker-username=%3 --docker-password=%4")
+                                  .arg(V(v, "name"), V(v, "server"), V(v, "user"), V(v, "pass"));
+                if (!V(v, "email").isEmpty()) cmd += QStringLiteral(" --docker-email=") + V(v, "email");
+                cmd += nsArg(V(v, "ns"));
+                return QStringList{cmd};
+            };
+            s << sc;
+        }
+        // ---- 创建 · 文件配置 ----
+        {
+            ScenarioDef sc;
+            sc.name = QStringLiteral("创建 · 从文件创建 (configmap/secret)");
+            sc.desc = QStringLiteral("--from-file 整文件载入；逗号分隔多个文件，支持 key=路径 命名");
+            sc.fields = {
+                combo("kind", "类型", {QStringLiteral("configmap"), QStringLiteral("secret")}, QStringLiteral("configmap")),
+                line("name", "名称", QStringLiteral("app-config")),
+                line("files", "文件路径", QStringLiteral("nginx.conf,app.properties"), "逗号分隔；可 key=路径"),
+                line("ns", "命名空间", QStringLiteral("default"))};
+            sc.gen = [](const QHash<QString, QString>& v) {
+                QStringList out;
+                if (V(v, "kind") == QLatin1String("configmap")) {
+                    QString cmd = QStringLiteral("kubectl create configmap %1").arg(V(v, "name"));
+                    for (const QString& f : V(v, "files").split(QLatin1Char(','), Qt::SkipEmptyParts))
+                        cmd += QStringLiteral(" --from-file=") + f.trimmed();
+                    out << cmd + nsArg(V(v, "ns"));
+                } else {
+                    QString cmd = QStringLiteral("kubectl create secret generic %1").arg(V(v, "name"));
+                    for (const QString& f : V(v, "files").split(QLatin1Char(','), Qt::SkipEmptyParts))
+                        cmd += QStringLiteral(" --from-file=") + f.trimmed();
+                    out << cmd + nsArg(V(v, "ns"));
+                }
+                return out;
+            };
+            s << sc;
+        }
+        // ---- 创建 · 定时任务手动触发 ----
+        {
+            ScenarioDef sc;
+            sc.name = QStringLiteral("创建 · 手动触发任务 (job)");
+            sc.desc = QStringLiteral("从 CronJob 复制出一次性 Job 手动执行；或直接指定镜像");
+            sc.fields = {
+                combo("mode", "来源", {QStringLiteral("从 CronJob 复制"), QStringLiteral("指定镜像")}, QStringLiteral("从 CronJob 复制")),
+                line("name", "Job 名称", QStringLiteral("db-backup-manual")),
+                line("cronjob", "CronJob 名称", QStringLiteral("db-backup")),
+                line("image", "镜像（指定镜像时）", QStringLiteral("busybox")),
+                line("cmd", "命令（可空）", QStringLiteral("sh -c 'echo hello'")),
+                line("ns", "命名空间", QStringLiteral("default"))};
+            sc.gen = [](const QHash<QString, QString>& v) {
+                if (V(v, "mode") == QLatin1String("从 CronJob 复制"))
+                    return QStringList{QStringLiteral("kubectl create job %1 --from=cronjob/%2%3")
+                                           .arg(V(v, "name"), V(v, "cronjob"), nsArg(V(v, "ns")))};
+                QString cmd = QStringLiteral("kubectl create job %1 --image=%2").arg(V(v, "name"), V(v, "image"));
+                if (!V(v, "cmd").isEmpty()) cmd += QStringLiteral(" -- ") + V(v, "cmd");
+                return QStringList{cmd + nsArg(V(v, "ns"))};
+            };
+            s << sc;
+        }
         // ---- apply ----
         {
             ScenarioDef sc;
@@ -1199,6 +1285,41 @@ spec:
             - name: backup
               image: postgres:16
               command: ["sh", "-c", "pg_dump ... > /backup/db.sql"]
+)YAML")},
+        {QStringLiteral("TLS 证书 Secret"),
+         QStringLiteral("Ingress HTTPS 证书；推荐用「kubectl create secret tls --cert --key」自动生成"),
+         QStringLiteral(R"YAML(apiVersion: v1
+kind: Secret
+metadata:
+  name: my-app-tls
+  namespace: default
+type: kubernetes.io/tls
+# 提示：data 内容为证书/私钥的 base64；
+# 更简单的方式（自动编码，推荐）：
+#   kubectl create secret tls my-app-tls \
+#     --cert=tls.crt --key=tls.key -n default
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSU...
+  tls.key: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tCk1JSU...
+)YAML")},
+        {QStringLiteral("docker-registry 凭据 Secret"),
+         QStringLiteral("私有镜像仓库拉取凭据，Pod 通过 imagePullSecrets 引用"),
+         QStringLiteral(R"YAML(apiVersion: v1
+kind: Secret
+metadata:
+  name: regcred
+  namespace: default
+type: kubernetes.io/dockerconfigjson
+# 推荐用命令生成（自动编码）：
+#   kubectl create secret docker-registry regcred \
+#     --docker-server=registry.example.com \
+#     --docker-username=admin --docker-password=xxx
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeS5leGFtcGxlLmNvbSI6eyJhdXRoIjoiYWRtaW46Y2hhbmdlLW1lIn19fQ==
+# Pod 使用：
+#   spec:
+#     imagePullSecrets:
+#       - name: regcred
 )YAML")},
         {QStringLiteral("Namespace 命名空间"),
          QStringLiteral("环境/项目隔离，可带资源配额"),

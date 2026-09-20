@@ -5,6 +5,8 @@
 #include <cstring>
 
 #include <mbedtls/aes.h>
+#include <mbedtls/x509_crt.h>
+#include <mbedtls/pk.h>
 #include <mbedtls/gcm.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/rsa.h>
@@ -220,6 +222,63 @@ AesResult aesDecrypt(const QString& cipherText, const QString& keyText, const QS
     }
     mbedtls_aes_free(&ctx);
     return r;
+}
+
+// ---------- X.509 证书解析 ----------
+CertInfo certParse(const QByteArray& pem) {
+    CertInfo info;
+    mbedtls_x509_crt crt;
+    mbedtls_x509_crt_init(&crt);
+    QByteArray data = pem.trimmed();
+    int r = mbedtls_x509_crt_parse(&crt, reinterpret_cast<const unsigned char*>(data.constData()),
+                                   static_cast<size_t>(data.size()) + 1);
+    if (r < 0) {
+        char buf[256] = {};
+        mbedtls_strerror(r, buf, sizeof(buf));
+        info.error = QStringLiteral("证书解析失败: %1（需 PEM 格式，含 BEGIN CERTIFICATE）").arg(QString::fromLatin1(buf));
+        mbedtls_x509_crt_free(&crt);
+        return info;
+    }
+    char dn[1024] = {};
+    mbedtls_x509_dn_gets(dn, sizeof(dn), &crt.subject);
+    info.subject = QString::fromLatin1(dn);
+    mbedtls_x509_dn_gets(dn, sizeof(dn), &crt.issuer);
+    info.issuer = QString::fromLatin1(dn);
+    mbedtls_x509_serial_gets(dn, sizeof(dn), &crt.serial);
+    info.serial = QString::fromLatin1(dn);
+    const mbedtls_md_type_t sigMd = crt.MBEDTLS_PRIVATE(sig_md);
+    const char* md = sigMd == MBEDTLS_MD_SHA256 ? "SHA-256"
+                   : sigMd == MBEDTLS_MD_SHA384 ? "SHA-384"
+                   : sigMd == MBEDTLS_MD_SHA512 ? "SHA-512"
+                   : sigMd == MBEDTLS_MD_SHA1 ? "SHA-1" : "其他";
+    info.sigAlg = QStringLiteral("%1 with %2").arg(QString::fromLatin1(md),
+                     QString::fromLatin1(mbedtls_pk_get_name(&crt.pk)));
+    info.pubkey = QStringLiteral("%1-%2 位").arg(QString::fromLatin1(mbedtls_pk_get_name(&crt.pk)))
+                      .arg(mbedtls_pk_get_bitlen(&crt.pk));
+    auto toDT = [](const mbedtls_x509_time& t) {
+        return QDateTime(QDate(t.year, t.mon, t.day), QTime(t.hour, t.min, t.sec), Qt::UTC);
+    };
+    info.notBefore = toDT(crt.valid_from);
+    info.notAfter = toDT(crt.valid_to);
+    info.daysLeft = static_cast<int>(QDateTime::currentDateTimeUtc().daysTo(info.notAfter));
+
+    // SAN 域名（context tag 2 = dNSName）
+    for (mbedtls_asn1_sequence* cur = crt.subject_alt_names.next; cur != nullptr; cur = cur->next) {
+        const unsigned char* p = cur->buf.p;
+        const unsigned char* end = p + cur->buf.len;
+        // 每项内层：82 len name
+        if (p < end && (*p & 0x1F) == 2) {
+            ++p;
+            if (p < end) {
+                size_t len = *p++;
+                if (p + len <= end)
+                    info.san << QString::fromLatin1(reinterpret_cast<const char*>(p), static_cast<int>(len));
+            }
+        }
+    }
+    mbedtls_x509_crt_free(&crt);
+    info.ok = true;
+    return info;
 }
 
 // ---------- RSA ----------
