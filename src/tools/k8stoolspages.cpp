@@ -70,11 +70,11 @@ static FieldDef spin(const char* key, const char* label, int def, int mn, int mx
 }
 
 static const QStringList kRes = {
-    QStringLiteral("po"), QStringLiteral("deploy"), QStringLiteral("svc"), QStringLiteral("ing"),
-    QStringLiteral("cm"), QStringLiteral("secret"), QStringLiteral("pvc"), QStringLiteral("ns"),
-    QStringLiteral("node"), QStringLiteral("sa"), QStringLiteral("role"), QStringLiteral("rolebinding"),
-    QStringLiteral("sts"), QStringLiteral("ds"), QStringLiteral("job"), QStringLiteral("cronjob"),
-    QStringLiteral("hpa"), QStringLiteral("rs"), QStringLiteral("crd"), QStringLiteral("all")};
+    QStringLiteral("pods"), QStringLiteral("deployments"), QStringLiteral("services"), QStringLiteral("ingresses"),
+    QStringLiteral("configmaps"), QStringLiteral("secrets"), QStringLiteral("persistentvolumeclaims"), QStringLiteral("namespaces"),
+    QStringLiteral("nodes"), QStringLiteral("serviceaccounts"), QStringLiteral("roles"), QStringLiteral("rolebindings"),
+    QStringLiteral("statefulsets"), QStringLiteral("daemonsets"), QStringLiteral("jobs"), QStringLiteral("cronjobs"),
+    QStringLiteral("horizontalpodautoscalers"), QStringLiteral("replicasets"), QStringLiteral("customresourcedefinitions"), QStringLiteral("all")};
 
 static const QStringList kOutFmt = {QString(), QStringLiteral("-o wide"), QStringLiteral("-o yaml"),
                                     QStringLiteral("-o json"), QStringLiteral("-o name")};
@@ -89,7 +89,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("查看 · 资源列表 (get)");
             sc.desc = QStringLiteral("列出资源；常用 -o wide / -o yaml，-l 按标签过滤，-A 全命名空间");
             sc.fields = {
-                combo("res", "资源类型", kRes, QStringLiteral("po")),
+                combo("res", "资源类型", kRes, QStringLiteral("pods")),
                 line("name", "名称（可空）", QString(), "留空=列出全部"),
                 line("ns", "命名空间", QStringLiteral("default"), "留空=当前上下文"),
                 line("selector", "标签选择器", QString(), "如 app=nginx"),
@@ -112,7 +112,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("查看 · 详细信息 (describe)");
             sc.desc = QStringLiteral("查看资源详情，含事件（Event）与最近状态");
             sc.fields = {
-                combo("res", "资源类型", kRes, QStringLiteral("pod")),
+                combo("res", "资源类型", kRes, QStringLiteral("pods")),
                 line("name", "名称"),
                 line("ns", "命名空间", QStringLiteral("default"))};
             sc.gen = [](const QHash<QString, QString>& v) {
@@ -218,7 +218,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("调试 · 端口转发 (port-forward)");
             sc.desc = QStringLiteral("把集群内端口映射到本地，浏览器/调试器直连 Pod 或 Service");
             sc.fields = {
-                line("target", "目标", QStringLiteral("pod/my-pod"), "pod/名称 或 deploy/名称 或 svc/名称"),
+                line("target", "目标", QStringLiteral("pods/my-pod"), "pods/名称 或 deployments/名称 或 services/名称"),
                 spin("lport", "本地端口", 8080, 1, 65535),
                 spin("rport", "集群端口", 80, 1, 65535),
                 line("ns", "命名空间", QStringLiteral("default"))};
@@ -255,7 +255,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("修改 · 在线编辑 (edit)");
             sc.desc = QStringLiteral("直接编辑资源的存活配置（临时生效，建议改 YAML 源）");
             sc.fields = {
-                combo("res", "资源类型", kRes, QStringLiteral("deploy")),
+                combo("res", "资源类型", kRes, QStringLiteral("deployments")),
                 line("name", "名称"),
                 line("ns", "命名空间", QStringLiteral("default"))};
             sc.gen = [](const QHash<QString, QString>& v) {
@@ -270,7 +270,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.desc = QStringLiteral("打标签或注解；--overwrite 覆盖已有值");
             sc.fields = {
                 combo("mode", "操作", {QStringLiteral("label"), QStringLiteral("annotate")}, QStringLiteral("label")),
-                combo("res", "资源类型", kRes, QStringLiteral("deploy")),
+                combo("res", "资源类型", kRes, QStringLiteral("deployments")),
                 line("name", "名称"),
                 line("kv", "键值", QStringLiteral("tier=frontend"), "label 用 k=v；annotate 建议 k: v"),
                 check("overwrite", "覆盖已有值 (--overwrite)"),
@@ -290,7 +290,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("修改 · JSON/YAML 补丁 (patch)");
             sc.desc = QStringLiteral("脚本化修改字段；merge 最常用，strategic 支持列表合并");
             sc.fields = {
-                combo("res", "资源类型", kRes, QStringLiteral("deploy")),
+                combo("res", "资源类型", kRes, QStringLiteral("deployments")),
                 line("name", "名称"),
                 combo("ptype", "补丁类型", {QStringLiteral("strategic"), QStringLiteral("merge"), QStringLiteral("json")},
                       QStringLiteral("merge")),
@@ -308,7 +308,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("伸缩 · 手动扩缩容 (scale)");
             sc.desc = QStringLiteral("修改副本数，秒级生效");
             sc.fields = {
-                combo("res", "资源类型", {QStringLiteral("deploy"), QStringLiteral("sts"), QStringLiteral("rs")}, QStringLiteral("deploy")),
+                combo("res", "资源类型", {QStringLiteral("deployments"), QStringLiteral("statefulsets"), QStringLiteral("replicasets")}, QStringLiteral("deployments")),
                 line("name", "名称"),
                 spin("replicas", "目标副本数", 3, 0, 1000),
                 line("ns", "命名空间", QStringLiteral("default"))};
@@ -344,7 +344,7 @@ static const QList<ScenarioDef>& scenarios() {
                 combo("sub", "操作", {QStringLiteral("restart"), QStringLiteral("undo"), QStringLiteral("status"),
                                       QStringLiteral("history"), QStringLiteral("pause"), QStringLiteral("resume")},
                       QStringLiteral("restart")),
-                line("res", "资源", QStringLiteral("deployment/my-app"), "类型/名称"),
+                line("res", "资源", QStringLiteral("deployments/my-app"), "如 deployments/名称"),
                 line("torev", "回滚到版本（可空）", QString(), "undo 时填，如 3"),
                 line("ns", "命名空间", QStringLiteral("default"))};
             sc.gen = [](const QHash<QString, QString>& v) {
@@ -362,7 +362,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("发布 · 更新镜像 (set image)");
             sc.desc = QStringLiteral("滚动更新容器镜像，触发重新发布");
             sc.fields = {
-                line("res", "资源", QStringLiteral("deployment/my-app")),
+                line("res", "资源", QStringLiteral("deployments/my-app")),
                 line("container", "容器名", QStringLiteral("my-app")),
                 line("image", "新镜像", QStringLiteral("nginx:1.25")),
                 line("ns", "命名空间", QStringLiteral("default"))};
@@ -426,7 +426,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("创建 · 服务暴露 (expose)");
             sc.desc = QStringLiteral("为工作负载创建 Service；对集群外选 NodePort/LoadBalancer");
             sc.fields = {
-                line("res", "资源", QStringLiteral("deployment/my-app")),
+                line("res", "资源", QStringLiteral("deployments/my-app")),
                 spin("port", "Service 端口", 80, 1, 65535),
                 spin("tport", "容器端口 (targetPort)", 8080, 1, 65535),
                 combo("type", "类型", {QStringLiteral("ClusterIP"), QStringLiteral("NodePort"), QStringLiteral("LoadBalancer")},
@@ -477,7 +477,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("删除 · 资源删除 (delete)");
             sc.desc = QStringLiteral("删除资源；--all 删同类型全部；强制删除仅用于终结卡死的资源");
             sc.fields = {
-                combo("res", "资源类型", kRes, QStringLiteral("pod")),
+                combo("res", "资源类型", kRes, QStringLiteral("pods")),
                 line("name", "名称", QString(), "配合 --all 可留空"),
                 check("all", "删除全部 (--all)"),
                 spin("grace", "宽限期(秒)", 30, 0, 3600),
