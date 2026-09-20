@@ -673,6 +673,12 @@ public:
     K8sCmdPage() {
         ToolPage::setMeta(QStringLiteral("box"), QStringLiteral("K8s 命令生成器"),
                           QStringLiteral("kubectl 可视化生成：查看 / 日志 / 事件 / 调试 / 发布 / RBAC / 集群"));
+        // 整页内容放入垂直滚动区：窗口缩小后可上下滚动填写参数/查看输出
+        auto* pageHost = new QWidget;
+        auto* pageLay = new QVBoxLayout(pageHost);
+        pageLay->setContentsMargins(0, 0, 6, 0);
+        pageLay->setSpacing(12);
+
         auto* top = new QWidget;
         auto* topLay = new QVBoxLayout(top);
         topLay->setContentsMargins(0, 0, 0, 0);
@@ -710,7 +716,7 @@ public:
         m_desc->setObjectName(QStringLiteral("pageDesc"));
         m_desc->setWordWrap(true);
         topLay->addWidget(m_desc);
-        body()->addWidget(ui::card(QStringLiteral("场景与集群（自动读取 ~/.kube/config）"), top));
+        pageLay->addWidget(ui::card(QStringLiteral("场景与集群（自动读取 ~/.kube/config）"), top));
 
         loadKubeconfig();
         m_regenTimer.setSingleShot(true);
@@ -732,13 +738,13 @@ public:
         formScroll->setWidgetResizable(true);
         formScroll->setFrameShape(QFrame::NoFrame);
         formScroll->setWidget(m_formHost);
-        formScroll->setMinimumHeight(200);
-        body()->addWidget(ui::card(QStringLiteral("参数"), formScroll, nullptr, true), 1);
+        formScroll->setMinimumHeight(160);
+        pageLay->addWidget(ui::card(QStringLiteral("参数"), formScroll, nullptr, true), 1);
 
         m_out = new QPlainTextEdit;
         m_out->setObjectName(QStringLiteral("mono"));
         m_out->setReadOnly(true);
-        m_out->setFixedHeight(120);
+        m_out->setMinimumHeight(100);
         m_out->setPlaceholderText(QStringLiteral("命令将实时生成…"));
         new CodeHighlighter(m_out->document());
         m_copyBtn = ui::button(QStringLiteral("复制全部"), "primary");
@@ -755,12 +761,13 @@ public:
         cbLay->setSpacing(6);
         cbLay->addWidget(m_copyBtn);
         cbLay->addWidget(m_runBtn);
-        body()->addWidget(ui::card(QStringLiteral("命令 · 参数变化实时更新"), m_out, cmdBtns));
+        pageLay->addWidget(ui::card(QStringLiteral("命令 · 参数变化实时更新"), m_out, cmdBtns));
 
         // 本地执行输出
         m_execOut = new QPlainTextEdit;
         m_execOut->setObjectName(QStringLiteral("mono"));
         m_execOut->setReadOnly(true);
+        m_execOut->setMinimumHeight(160);
         m_execOut->setPlaceholderText(QStringLiteral("点击「▶ 执行」在本机运行上方命令（需已安装 kubectl 并配置集群）…"));
         new LogHighlighter(m_execOut->document());
         m_stopBtn = ui::button(QStringLiteral("停止"));
@@ -768,9 +775,15 @@ public:
         connect(m_stopBtn, &QPushButton::clicked, this, [this] {
             if (m_proc && m_proc->state() != QProcess::NotRunning) m_proc->kill();
         });
-        body()->addWidget(ui::card(QStringLiteral("执行输出"), m_execOut, m_stopBtn, true), 1);
+        pageLay->addWidget(ui::card(QStringLiteral("执行输出"), m_execOut, m_stopBtn, true), 1);
 
         detectKubectl();
+
+        auto* pageScroll = new QScrollArea;
+        pageScroll->setWidgetResizable(true);
+        pageScroll->setFrameShape(QFrame::NoFrame);
+        pageScroll->setWidget(pageHost);
+        body()->addWidget(pageScroll, 1);
 
         connect(m_scenario, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, &K8sCmdPage::buildForm);
