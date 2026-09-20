@@ -55,6 +55,15 @@ protected:
     void rebuildRules() override;
 };
 
+// YAML 专用高亮（K8s 模板页）
+class YamlHighlighter : public ThemedHighlighter {
+    Q_OBJECT
+public:
+    using ThemedHighlighter::ThemedHighlighter;
+protected:
+    void rebuildRules() override;
+};
+
 // Shell/kubectl 命令高亮（K8s 命令生成器）
 class ShellHighlighter : public ThemedHighlighter {
     Q_OBJECT

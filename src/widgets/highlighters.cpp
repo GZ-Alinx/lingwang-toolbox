@@ -110,6 +110,32 @@ void CodeHighlighter::rebuildRules() {
     rebuild();
 }
 
+// ---------------- YamlHighlighter ----------------
+void YamlHighlighter::rebuildRules() {
+    m_patterns.clear();
+    m_formats.clear();
+    const Palette p = pal();
+
+    auto add = [this](const QString& pattern, const QColor& color, bool bold = false) {
+        QTextCharFormat fmt;
+        fmt.setForeground(color);
+        if (bold) fmt.setFontWeight(QFont::Bold);
+        m_patterns.append(QRegularExpression(pattern));
+        m_formats.append(fmt);
+    };
+
+    add(QStringLiteral("#[^\\n]*"), p.dim);                                            // 注释
+    add(QStringLiteral("'[^']*'|\"[^\"]*\""), p.str);                                  // 引号串
+    add(QStringLiteral("(?<=[{,])[A-Za-z_][\\w.-]*(?=\\s*:)"), p.key);                 // flow 键 {cpu: ..}
+    add(QStringLiteral("^[ \\t]*-?[ \\t]*[^\\s:#{}\\[\\]][^:\\n]{0,60}(?=:(\\s|$))"), p.key, true);  // 键（含 "- name:"）
+    add(QStringLiteral("\\b(?:true|false|null|yes|no|on|off)\\b"), p.boolean);         // 布尔
+    add(QStringLiteral("\\b\\d+(?:\\.\\d+)?\\b"), p.num);                              // 数字
+    add(QStringLiteral("^[ \\t]*-[ \\t]+"), p.accent);                                 // 列表符
+    add(QStringLiteral("(?<=^|\\s)---(?=\\s|$)"), p.dim);                              // 文档分隔
+    add(QStringLiteral("[&*][A-Za-z_]\\w*"), p.accent);                                // anchor/alias
+    rebuild();
+}
+
 // ---------------- ShellHighlighter ----------------
 void ShellHighlighter::rebuildRules() {
     m_patterns.clear();

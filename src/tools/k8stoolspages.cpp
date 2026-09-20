@@ -91,28 +91,6 @@ static const QStringList kRes = {
 static const QStringList kOutFmt = {QString(), QStringLiteral("-o wide"), QStringLiteral("-o yaml"),
                                     QStringLiteral("-o json"), QStringLiteral("-o name")};
 
-// 把整条命令拆成参数列表：支持 'xxx' 与 "xxx" 包裹含空格/JSON 的参数
-static QStringList tokenify(const QString& cmd) {
-    QStringList out;
-    const int sp = static_cast<int>(cmd.indexOf(QLatin1Char(' ')));
-    if (sp < 0) return {cmd};
-    out << cmd.left(sp);
-    QString cur;
-    bool inS = false, inD = false, has = false;
-    for (const QChar& ch : cmd.mid(sp + 1)) {
-        if (ch == QLatin1Char('\'') && !inD) { inS = !inS; has = true; continue; }
-        if (ch == QLatin1Char('"') && !inS) { inD = !inD; has = true; continue; }
-        if (ch.isSpace() && !inS && !inD) {
-            if (has) { out << cur; cur.clear(); has = false; }
-            continue;
-        }
-        cur += ch;
-        has = true;
-    }
-    if (has) out << cur;
-    return out;
-}
-
 static const QList<ScenarioDef>& scenarios() {
     static const QList<ScenarioDef> list = [] {
         QList<ScenarioDef> s;
@@ -753,15 +731,7 @@ public:
             m_copyBtn->setText(QStringLiteral("✓ 已复制"));
             QTimer::singleShot(1200, this, [this] { m_copyBtn->setText(QStringLiteral("复制全部")); });
         });
-        m_runBtn = ui::button(QStringLiteral("▶ 执行"), "primary");
-        connect(m_runBtn, &QPushButton::clicked, this, [this] { runCommands(); });
-        auto* cmdBtns = new QWidget;
-        auto* cbLay = new QHBoxLayout(cmdBtns);
-        cbLay->setContentsMargins(0, 0, 0, 0);
-        cbLay->setSpacing(6);
-        cbLay->addWidget(m_copyBtn);
-        cbLay->addWidget(m_runBtn);
-        pageLay->addWidget(ui::card(QStringLiteral("命令 · 参数变化实时更新"), m_out, cmdBtns));
+        pageLay->addWidget(ui::card(QStringLiteral("命令 · 参数变化实时更新（复制到终端执行）"), m_out, m_copyBtn));
 
         m_out->setMinimumHeight(200);   // 命令区兼任执行输出控制台
 
@@ -801,10 +771,7 @@ private slots:
         regen();
     }
     // 防抖统一驱动：任何控件变化 → 30ms 后重生成（合并高频输入，保证可靠刷新）
-    void scheduleRegen() {
-        if (m_executing) return;   // 执行期间保持输出视图，结束后任意参数变化即恢复命令
-        m_regenTimer.start();
-    }
+    void scheduleRegen() { m_regenTimer.start(); }
     void regen() {
         if (m_scenario->currentIndex() < 0) return;
         const ScenarioDef& sc = scenarios().at(m_scenario->currentIndex());
@@ -917,50 +884,6 @@ private slots:
             });
         });
     }
-    // 执行：输出直接写入命令区（控制台模式）；执行中按钮变「■ 停止」
-    void runCommands() {
-        if (m_executing) {
-            if (m_proc && m_proc->state() != QProcess::NotRunning) m_proc->kill();
-            return;
-        }
-        if (!m_kubectlOk) {
-            m_out->setPlainText(QStringLiteral("# ✗ 未检测到 kubectl，请先点击「一键安装 kubectl」或自行安装\n# （修改任意参数可恢复命令显示）"));
-            return;
-        }
-        const QStringList lines = m_lastCmd.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-        if (lines.isEmpty()) return;
-        m_out->clear();
-        m_queue = lines;
-        m_executing = true;
-        m_runBtn->setText(QStringLiteral("■ 停止"));
-        runNext();
-    }
-    void runNext() {
-        if (m_queue.isEmpty()) {
-            m_executing = false;
-            m_runBtn->setText(QStringLiteral("▶ 执行"));
-            m_out->appendPlainText(QStringLiteral("—— 执行完成（修改任意参数恢复命令显示）——"));
-            return;
-        }
-        const QString cmd = m_queue.takeFirst();
-        m_out->appendPlainText(QStringLiteral("$ %1").arg(cmd));
-        delete m_proc;
-        m_proc = new QProcess(this);
-        m_proc->setProcessChannelMode(QProcess::MergedChannels);
-        connect(m_proc, &QProcess::readyReadStandardOutput, this, [this] {
-            while (m_proc && m_proc->canReadLine())
-                m_out->appendPlainText(QString::fromUtf8(m_proc->readLine()).trimmed());
-        });
-        connect(m_proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-                [this](int code, QProcess::ExitStatus) {
-            if (code != 0)
-                m_out->appendPlainText(QStringLiteral("✗ 退出码 %1").arg(code));
-            runNext();
-        });
-        const QStringList tokens = tokenify(cmd);
-        m_proc->start(tokens.value(0), tokens.mid(1));
-    }
-
     // 读取 ~/.kube/config：列出全部集群 context 及其默认命名空间
     void loadKubeconfig() {
         QString home = qEnvironmentVariable("USERPROFILE");
@@ -1061,12 +984,8 @@ private:
     QComboBox* m_ns = nullptr;       // 命名空间（全局）
     QLabel* m_kubectlLbl = nullptr;
     QPushButton* m_installBtn = nullptr;
-    QPushButton* m_runBtn = nullptr;
-    QProcess* m_proc = nullptr;
     QNetworkAccessManager m_nam;
-    QStringList m_queue;
     bool m_kubectlOk = false;
-    bool m_executing = false;
     QTimer m_regenTimer;
     QLabel* m_desc = nullptr;
     QFormLayout* m_form = nullptr;
@@ -1344,7 +1263,7 @@ public:
         m_out = new QPlainTextEdit;
         m_out->setObjectName(QStringLiteral("mono"));
         m_out->setPlaceholderText(QStringLiteral("选择模板后在此生成，可直接编辑…"));
-        new ShellHighlighter(m_out->document());   // kubectl 命令着色
+        new YamlHighlighter(m_out->document());   // kubectl 命令着色
         auto* copyBtn = ui::button(QStringLiteral("复制"), "primary");
         connect(copyBtn, &QPushButton::clicked, this, [this] { ui::copyText(m_out->toPlainText()); });
         auto* resetBtn = ui::button(QStringLiteral("重置模板"));
