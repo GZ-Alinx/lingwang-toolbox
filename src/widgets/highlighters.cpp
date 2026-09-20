@@ -111,10 +111,20 @@ void CodeHighlighter::rebuildRules() {
 }
 
 // ---------------- YamlHighlighter ----------------
+// 配色对标 VS Code Dark+ 的 YAML 视觉（键亮绿 / 数字与量值蓝 / 注释绿灰 / 字符串橙）
 void YamlHighlighter::rebuildRules() {
     m_patterns.clear();
     m_formats.clear();
-    const Palette p = pal();
+
+    const bool dark = hl::isDark();
+    // VS Code 风格调色
+    const QColor keyC   = dark ? QColor(0x7E, 0xE7, 0x87) : QColor(0x0F, 0x7B, 0x3F);   // 键：亮绿
+    const QColor numC   = dark ? QColor(0x56, 0x9C, 0xD6) : QColor(0x0B, 0x69, 0xA3);   // 数字/量值：蓝
+    const QColor comC   = dark ? QColor(0x6A, 0x99, 0x55) : QColor(0x54, 0x7A, 0x33);   // 注释：绿灰
+    const QColor strC   = dark ? QColor(0xCE, 0x91, 0x78) : QColor(0xA3, 0x15, 0x15);   // 引号串：橙
+    const QColor boolC  = dark ? QColor(0x56, 0x9C, 0xD6) : QColor(0x0B, 0x69, 0xA3);   // 布尔：蓝
+    const QColor dashC  = dark ? QColor(0xE8, 0xB3, 0x68) : QColor(0x8F, 0x5A, 0x00);   // 列表符：琥珀
+    const QColor docC   = dark ? QColor(0x80, 0x80, 0x80) : QColor(0x8C, 0x8C, 0x8C);   // 文档分隔
 
     auto add = [this](const QString& pattern, const QColor& color, bool bold = false) {
         QTextCharFormat fmt;
@@ -124,15 +134,15 @@ void YamlHighlighter::rebuildRules() {
         m_formats.append(fmt);
     };
 
-    add(QStringLiteral("#[^\\n]*"), p.dim);                                            // 注释
-    add(QStringLiteral("'[^']*'|\"[^\"]*\""), p.str);                                  // 引号串
-    add(QStringLiteral("(?<=[{,])[A-Za-z_][\\w.-]*(?=\\s*:)"), p.key);                 // flow 键 {cpu: ..}
-    add(QStringLiteral("^[ \\t]*-?[ \\t]*[^\\s:#{}\\[\\]][^:\\n]{0,60}(?=:(\\s|$))"), p.key, true);  // 键（含 "- name:"）
-    add(QStringLiteral("\\b(?:true|false|null|yes|no|on|off)\\b"), p.boolean);         // 布尔
-    add(QStringLiteral("\\b\\d+(?:\\.\\d+)?\\b"), p.num);                              // 数字
-    add(QStringLiteral("^[ \\t]*-[ \\t]+"), p.accent);                                 // 列表符
-    add(QStringLiteral("(?<=^|\\s)---(?=\\s|$)"), p.dim);                              // 文档分隔
-    add(QStringLiteral("[&*][A-Za-z_]\\w*"), p.accent);                                // anchor/alias
+    add(QStringLiteral("#[^\\n]*"), comC);                                            // 注释
+    add(QStringLiteral("'[^']*'|\"[^\"]*\""), strC);                                  // 引号串
+    add(QStringLiteral("(?<=[{,])[A-Za-z_][\\w.-]*(?=\\s*:)"), keyC);                 // flow 键 {cpu: ..}
+    add(QStringLiteral("^[ \\t]*-?[ \\t]*[^\\s:#{}\\[\\]][^:\\n]{0,60}(?=:(\\s|$))"), keyC, true);  // 键（含 "- name:"）
+    add(QStringLiteral("\\b(?:true|false|null|yes|no|on|off)\\b"), boolC);            // 布尔
+    add(QStringLiteral("\\b\\d+(?:\\.\\d+)?(?:m|Mi|Gi|Ki|MB|GB|KB|ms|s|m|h)?\\b"), numC);  // 数字与带单位量值
+    add(QStringLiteral("^[ \\t]*-[ \\t]+"), dashC);                                   // 列表符
+    add(QStringLiteral("(?<=^|\\s)---(?=\\s|$)"), docC);                              // 文档分隔
+    add(QStringLiteral("[&*][A-Za-z_]\\w*"), dashC);                                  // anchor/alias
     rebuild();
 }
 
