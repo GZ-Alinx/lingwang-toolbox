@@ -1,0 +1,16 @@
+# 构建产物
+build/
+dist/
+LingWangToolbox-Setup-*.exe
+LingWangToolbox-windows-x64*.zip
+LingWangToolbox-macos-*.dmg
+*.zip
+*.dmg
+
+# IDE / 系统
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+CMakeUserPresets.json

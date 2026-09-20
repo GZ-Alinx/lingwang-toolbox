@@ -1,0 +1,131 @@
+name: Release
+
+# 推送 v* 标签时自动构建 Windows（便携包+安装向导）与 macOS（DMG）并发布 Release
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Windows x64 (安装包 + 便携版)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.8.2 (MinGW)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.2'
+          arch: 'win64_mingw'
+          tools: 'tools_mingw1310 qt.tools.win64_mingw1310'
+          cache: true
+
+      - name: Configure
+        env:
+          CC: gcc
+          CXX: g++
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Deploy runtime
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build/LingWangToolbox.exe dist/
+          windeployqt --release --no-translations --compiler-runtime dist/LingWangToolbox.exe
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ISCC -ErrorAction SilentlyContinue)) {
+            choco install innosetup -y --no-progress
+          }
+          ISCC scripts/installer.iss
+
+      - name: Package portable zip
+        shell: pwsh
+        run: Compress-Archive -Path dist/* -DestinationPath LingWangToolbox-windows-x64-portable.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: |
+            LingWangToolbox-Setup-*.exe
+            LingWangToolbox-windows-x64-portable.zip
+
+  build-macos:
+    name: macOS Apple Silicon (DMG)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.8.2 (clang arm64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.2'
+          cache: true
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Deploy Qt frameworks (macdeployqt)
+        run: macdeployqt build/LingWangToolbox.app -verbose=1
+
+      - name: Icons + ad-hoc codesign
+        run: |
+          mkdir -p appicon.iconset
+          for s in 16 32 64 128 256 512; do
+            cp resources/icons/icon_${s}x${s}.png appicon.iconset/icon_${s}x${s}.png 2>/dev/null || true
+            double=$((s*2))
+            cp resources/icons/icon_${double}x${double}.png appicon.iconset/icon_${s}x${s}@2x.png 2>/dev/null || true
+          done
+          iconutil -c icns appicon.iconset -o LingWangToolbox.icns
+          mkdir -p build/LingWangToolbox.app/Contents/Resources
+          cp LingWangToolbox.icns build/LingWangToolbox.app/Contents/Resources/
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile LingWangToolbox" build/LingWangToolbox.app/Contents/Info.plist || true
+          codesign --force --deep -s - build/LingWangToolbox.app
+
+      - name: Create DMG
+        run: |
+          mkdir -p dmgstage
+          cp -R build/LingWangToolbox.app dmgstage/
+          ln -s /Applications dmgstage/Applications
+          hdiutil create -volname "灵王工具箱" -srcfolder dmgstage -ov -format UDZO \
+            LingWangToolbox-macos-arm64.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: LingWangToolbox-macos-arm64.dmg
+
+  release:
+    name: Publish Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            LingWangToolbox-Setup-*.exe
+            LingWangToolbox-windows-x64-portable.zip
+            LingWangToolbox-macos-arm64.dmg
+          generate_release_notes: true
