@@ -12,6 +12,7 @@
 #include <QPushButton>
 #include <QFormLayout>
 #include <QScrollArea>
+#include <QTimer>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QHash>
@@ -671,8 +672,12 @@ public:
         m_out->setPlaceholderText(QStringLiteral("命令将实时生成…"));
         new CodeHighlighter(m_out->document());
         m_copyBtn = ui::button(QStringLiteral("复制全部"), "primary");
-        connect(m_copyBtn, &QPushButton::clicked, this, [this] { ui::copyText(m_out->toPlainText()); });
-        body()->addWidget(ui::card(QStringLiteral("命令（实时生成）"), m_out, m_copyBtn));
+        connect(m_copyBtn, &QPushButton::clicked, this, [this] {
+            ui::copyText(m_out->toPlainText());
+            m_copyBtn->setText(QStringLiteral("✓ 已复制"));
+            QTimer::singleShot(1200, this, [this] { m_copyBtn->setText(QStringLiteral("复制全部")); });
+        });
+        body()->addWidget(ui::card(QStringLiteral("命令 · 参数变化实时更新"), m_out, m_copyBtn));
 
         connect(m_scenario, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, &K8sCmdPage::buildForm);
@@ -697,6 +702,7 @@ private slots:
                 m_form->addRow(f.label + QStringLiteral(":"), w);
         }
         m_desc->setText(sc.desc);
+        m_lastCmd.clear();   // 切场景强制重刷
         regen();
     }
     void regen() {
@@ -711,7 +717,18 @@ private slots:
             else if (auto* s = qobject_cast<QSpinBox*>(w)) v.insert(f.key, QString::number(s->value()));
             else if (auto* e = qobject_cast<QLineEdit*>(w)) v.insert(f.key, e->text().trimmed());
         }
-        m_out->setPlainText(sc.gen(v).join(QLatin1Char('\n')));
+        const QString next = sc.gen(v).join(QLatin1Char('\n'));
+        if (next != m_lastCmd) {
+            m_out->setPlainText(next);
+            m_lastCmd = next;
+            flashOutput();   // 命令变化 → 输出区闪烁提示
+        }
+    }
+    void flashOutput() {
+        if (!m_out) return;
+        m_out->setStyleSheet(QStringLiteral(
+            "border: 2px solid #4F8CFF; border-radius: 6px; background: rgba(79,140,255,0.07);"));
+        QTimer::singleShot(450, this, [this] { m_out->setStyleSheet(QString()); });
     }
 
 private:
@@ -755,6 +772,7 @@ private:
     QWidget* m_formHost = nullptr;
     QPlainTextEdit* m_out = nullptr;
     QPushButton* m_copyBtn = nullptr;
+    QString m_lastCmd;
     QHash<QString, QWidget*> m_widgets;
 };
 
