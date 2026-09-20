@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(lingwtools VERSION 1.0.2 LANGUAGES C CXX)
+project(lingwtools VERSION 1.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -84,6 +84,7 @@ set(APP_SOURCES
   src/tools/texttoolspages.cpp
   src/tools/nettoolspages.cpp
   src/tools/cryptoolspages.cpp
+  src/tools/k8stoolspages.cpp
   src/tools/systoolspages.cpp
 )
 

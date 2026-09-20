@@ -26,6 +26,7 @@ static const QHash<QString, QString>& defs() {
         {QStringLiteral("clock"), QStringLiteral("<circle cx=\"12\" cy=\"12\" r=\"10\"/><polyline points=\"12 6 12 12 16 14\"/>")},
         {QStringLiteral("hash"), QStringLiteral("<line x1=\"4\" y1=\"9\" x2=\"20\" y2=\"9\"/><line x1=\"4\" y1=\"15\" x2=\"20\" y2=\"15\"/><line x1=\"10\" y1=\"3\" x2=\"8\" y2=\"21\"/><line x1=\"16\" y1=\"3\" x2=\"14\" y2=\"21\"/>")},
         {QStringLiteral("grid"), QStringLiteral("<rect x=\"3\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"/>")},
+        {QStringLiteral("box"), QStringLiteral("<path d=\"M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\"/><polyline points=\"3.27 6.96 12 12.01 20.73 6.96\"/><line x1=\"12\" y1=\"22.08\" x2=\"12\" y2=\"12\"/>")},
         {QStringLiteral("chevron-right"), QStringLiteral("<polyline points=\"9 18 15 12 9 6\"/>")},
         {QStringLiteral("chevron-down"), QStringLiteral("<polyline points=\"6 9 12 15 18 9\"/>")},
         {QStringLiteral("search"), QStringLiteral("<circle cx=\"11\" cy=\"11\" r=\"8\"/><line x1=\"21\" y1=\"21\" x2=\"16.65\" y2=\"16.65\"/>")},

@@ -7,6 +7,7 @@ static const QString CatNet = QStringLiteral("网络诊断");
 static const QString CatCodec = QStringLiteral("编解码");
 static const QString CatCrypto = QStringLiteral("加密哈希");
 static const QString CatText = QStringLiteral("文本开发");
+static const QString CatK8s = QStringLiteral("容器运维");
 static const QString CatSys = QStringLiteral("系统信息");
 
 QList<ToolMeta>& ToolRegistry::all() {
@@ -88,6 +89,14 @@ QList<ToolMeta>& ToolRegistry::all() {
         add(QStringLiteral("sqlfmt"), QStringLiteral("SQL 格式化"), QStringLiteral("SQL 语句美化排版"), CatText, QStringLiteral("terminal"),
             {"sql", "格式化", "format", "美化"}, &pages::createSqlFormat);
 
+        // ---------- 容器运维 ----------
+        add(QStringLiteral("k8scmd"), QStringLiteral("K8s 命令生成器"),
+            QStringLiteral("kubectl 可视化生成：查看/日志/事件/调试/发布/RBAC/集群"), CatK8s, QStringLiteral("box"),
+            {"k8s", "kubernetes", "kubectl", "容器", "pod", "deploy", "命令", "运维"}, &pages::createK8sCmd);
+        add(QStringLiteral("k8syaml"), QStringLiteral("K8s YAML 模板"),
+            QStringLiteral("Deployment/Service/Ingress/RBAC 等常用资源清单模板"), CatK8s, QStringLiteral("file"),
+            {"yaml", "模板", "k8s", "deployment", "ingress", "rbac", "清单"}, &pages::createK8sYaml);
+
         // ---------- 系统信息 ----------
         add(QStringLiteral("sysinfo"), QStringLiteral("系统信息"), QStringLiteral("操作系统、CPU、内存概览"), CatSys, QStringLiteral("cpu"),
             {"系统", "system", "cpu", "内存", "版本"}, &pages::createSysInfo);
@@ -108,7 +117,7 @@ const ToolMeta* ToolRegistry::find(const QString& id) {
 }
 
 QStringList ToolRegistry::categories() {
-    return {CatNet, CatCodec, CatCrypto, CatText, CatSys};
+    return {CatNet, CatK8s, CatCodec, CatCrypto, CatText, CatSys};
 }
 
 QColor ToolRegistry::categoryColor(const QString& category) {
@@ -117,6 +126,7 @@ QColor ToolRegistry::categoryColor(const QString& category) {
         {QStringLiteral("编解码"),   QColor(0xA8, 0x78, 0xF0)},
         {QStringLiteral("加密哈希"), QColor(0x2E, 0xCC, 0x8F)},
         {QStringLiteral("文本开发"), QColor(0xFF, 0xA5, 0x4D)},
+        {QStringLiteral("容器运维"), QColor(0xE8, 0x5D, 0x8A)},
         {QStringLiteral("系统信息"), QColor(0x2E, 0xC7, 0xD9)},
     };
     return colors.value(category, QColor(0x4F, 0x8C, 0xFF));

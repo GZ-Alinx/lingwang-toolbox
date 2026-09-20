@@ -37,6 +37,9 @@ ToolPage* createCron();
 ToolPage* createQrcode();
 ToolPage* createTextProc();
 ToolPage* createSqlFormat();
+// 容器运维
+ToolPage* createK8sCmd();
+ToolPage* createK8sYaml();
 // 系统
 ToolPage* createSysInfo();
 ToolPage* createUrlParser();

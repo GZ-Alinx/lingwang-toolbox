@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 [![Release](https://img.shields.io/badge/下载-Releases-4F8CFF)](../../releases/latest)
 
-## ✨ 功能（v1 共 33 个工具）
+## ✨ 功能（v1.1 共 35 个工具）
 
 ### 🌐 网络诊断
 | 工具 | 说明 |
@@ -20,6 +20,12 @@
 | 子网计算器 | CIDR ↔ 掩码、网段 / 广播 / 可用主机范围 |
 | Whois 查询 | 域名注册信息（IANA + 注册商两级查询） |
 | 网卡信息 | 网卡 / MAC / IPv4 / IPv6 一览 |
+
+### 🐳 容器运维（v1.1 新增）
+| 工具 | 说明 |
+|---|---|
+| K8s 命令生成器 | kubectl 可视化生成：查看/日志/事件/调试(exec·cp·端口转发·top)/修改/扩缩容/发布(rollout·set image)/创建/删除/RBAC 权限(role·clusterrole·can-i·SA·Token)/节点管理/集群信息，25+ 场景实时生成 |
+| K8s YAML 模板 | Deployment / Service / Ingress / ConfigMap / Secret / PVC / SA / Role / RoleBinding / HPA / CronJob / Namespace / DaemonSet 模板，带中文注释可编辑 |
 
 ### 🔐 编解码
 Base64（文本 + 文件 + data URI）· URL 编解码 · 进制转换（2/8/10/16）· Unicode（\uXXXX）· JWT 解析（含过期时间）· HTML 实体
@@ -46,7 +52,7 @@ Base64（文本 + 文件 + data URI）· URL 编解码 · 进制转换（2/8/10/
 
 | 平台 | 产物 | 说明 |
 |---|---|---|
-| Windows x64 | `lingwtools-setup-1.0.2.exe` | **安装向导**：可选安装路径、开始菜单/桌面快捷方式，含卸载器 |
+| Windows x64 | `lingwtools-setup-1.1.0.exe` | **安装向导**：可选安装路径、开始菜单/桌面快捷方式，含卸载器 |
 | Windows x64 | `lingwtools-windows-x64-portable.zip` | **绿色便携版**：解压双击即用，不写注册表 |
 | macOS Apple Silicon | `lingwtools-macos-arm64.dmg` | 打开后将 `灵王工具箱.app` 拖入 Applications |
 
