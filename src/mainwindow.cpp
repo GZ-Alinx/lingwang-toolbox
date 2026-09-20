@@ -27,8 +27,10 @@
 
 MainWindow::MainWindow() {
     setWindowTitle(QStringLiteral("灵王工具箱 v%1").arg(QCoreApplication::applicationVersion()));
-    resize(1180, 760);
-    setMinimumSize(960, 620);
+    resize(1280, 880);
+    // 锁定下限为内容完整显示所需尺寸：窗口不可再缩小，杜绝挤压/滚动问题；
+    // 仍可放大与最大化（放大只会更宽松），并兼容高分屏缩放
+    setMinimumSize(1100, 780);
     setWindowIcon(Icons::pixmap(QStringLiteral("zap"), QColor(0x4F, 0x8C, 0xFF), 256));
 
     // 主题

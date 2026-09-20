@@ -4,7 +4,7 @@
 
 #define MyAppName "灵王工具箱"
 #define MyAppNameEn "LingWangToolbox"
-#define MyAppVersion "1.3.1"
+#define MyAppVersion "1.3.2"
 #define MyAppPublisher "LingWang"
 #define MyAppExeName "lingwtools.exe"
 
