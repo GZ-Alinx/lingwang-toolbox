@@ -73,11 +73,19 @@ int main(int argc, char** argv) {
         const auto combos = page->findChildren<QComboBox*>();
         for (QComboBox* c : combos) {
             if (c->isEditable() && c->objectName() != QLatin1String("k8sNs")) {
-                std::printf("[respick] items=%d cur='%s'\n", c->count(), qPrintable(c->currentText()));
+                std::printf("[respick] items=%d cur='%s' placeholder='%s'\n",
+                            c->count(), qPrintable(c->currentText()),
+                            qPrintable(c->placeholderText()));
                 for (int i = 0; i < c->count() && i < 5; ++i)
                     std::printf("[respick]   %s\n", qPrintable(c->itemText(i)));
             }
         }
+        // 行内提示条（拉取中/空资源/失败原因）
+        const auto hints = page->findChildren<QLabel*>(QStringLiteral("resPickHint"));
+        std::printf("[hints] %d 个\n", int(hints.size()));
+        for (QLabel* h : hints)
+            std::printf("[hint] visible=%s text='%s'\n",
+                        h->isVisible() ? "yes" : "no", qPrintable(h->text()));
         std::printf("K8S SMOKE DONE\n");
         std::fflush(stdout);
         app.quit();

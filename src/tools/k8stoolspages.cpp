@@ -1345,6 +1345,17 @@ private slots:
         p->start(kubectlPath(), args);
     }
 
+    // 资源名称选择器的行内提示：text 空 = 隐藏；err = 警示红，否则中性灰（拉取中等）
+    void setResHint(QLabel* hint, const QString& text, bool err) {
+        if (!hint) return;
+        if (text.isEmpty()) { hint->hide(); return; }
+        hint->setText(err ? QStringLiteral("⚠ ") + text : text);
+        hint->setStyleSheet(err
+                                ? QStringLiteral("color:#F56B63;")
+                                : QStringLiteral("color:#8B949E;"));
+        hint->show();
+    }
+
     // 集群/命名空间变化后，已拉取的资源名称列表作废（清列表、保留手动输入）
     void invalidateResPickers() {
         ++m_resGen;   // 在途拉取全部作废：旧集群/旧命名空间的结果晚归时不得覆盖控件
@@ -1355,6 +1366,8 @@ private slots:
             r.combo->clear();
             r.combo->setCurrentText(t);
             r.combo->blockSignals(false);
+            if (!r.f.hint.isEmpty()) r.combo->setPlaceholderText(r.f.hint);   // 还原默认占位
+            setResHint(r.hint, QString(), false);                             // 收起旧提示
         }
     }
     // 防抖调度：集群/命名空间/场景变化后自动拉取当前表单的资源名称列表
@@ -1365,13 +1378,14 @@ private slots:
     void autoFetchResPickers() {
         if (!m_kubectlOk) return;
         for (const ResPickInfo& r : m_resPickers)
-            if (r.combo && r.btn) fetchResourceNames(r.combo, r.btn, r.f);
+            if (r.combo && r.btn) fetchResourceNames(r.combo, r.btn, r.f, r.hint);
     }
 
     // 拉取某类资源的真实名称列表填充到可编辑下拉（-o name）
-    void fetchResourceNames(QComboBox* target, QPushButton* btn, const FieldDef& f) {
+    void fetchResourceNames(QComboBox* target, QPushButton* btn, const FieldDef& f, QLabel* hint = nullptr) {
         if (!m_kubectlOk) {
             flashBtn(btn, false, QStringLiteral("未检测到 kubectl，无法拉取；可直接手动输入"));
+            setResHint(hint, QStringLiteral("未检测到 kubectl —— 可点右上角「一键安装」，或直接手动输入名称"), true);
             return;
         }
         // 解析资源类型：固定类型 > 表单字段动态值（如“资源类型”下拉）
@@ -1383,6 +1397,7 @@ private slots:
         }
         if (res.isEmpty() || res == QLatin1String("all")) {
             flashBtn(btn, false, QStringLiteral("请先选择有效的资源类型（all 不支持拉取名称）"));
+            setResHint(hint, QStringLiteral("资源类型为「all」时不支持拉取名称 —— 请选择具体类型，或直接手动输入"), true);
             return;
         }
         const bool clusterScoped = isClusterScopedRes(res);
@@ -1395,7 +1410,9 @@ private slots:
             args << QStringLiteral("-n") << ns;
         btn->setEnabled(false);
         btn->setToolTip(QStringLiteral("正在拉取 %1 …").arg(res));
+        setResHint(hint, QStringLiteral("正在从集群拉取 %1 列表…").arg(res), false);
         const bool rawRef = f.raw;   // moc 对初始化捕获敏感，先取局部值
+        const QString defHint = f.hint;   // 默认占位文本（成功后还原用）
         const quint64 gen = m_resGen;   // 同一代内多个选择器并发拉取互不干扰；换代后全部作废
         auto* p = new QProcess(this);
         // 缓冲用共享指针：finished 回调（含多个提前 return）结束后自动释放，
@@ -1412,7 +1429,7 @@ private slots:
         connect(p, &QProcess::readyReadStandardOutput, p, [p, outBuf] { *outBuf += p->readAllStandardOutput(); });
         connect(p, &QProcess::readyReadStandardError, p, [p, errBuf] { *errBuf += p->readAllStandardError(); });
         connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-                [this, p, outBuf, errBuf, target, btn, rawRef, res, timedOut, gen](int code) {
+                [this, p, outBuf, errBuf, target, btn, hint, rawRef, defHint, res, ns, clusterScoped, timedOut, gen](int code) {
             p->deleteLater();
             if (gen != m_resGen) return;   // 过期结果（集群/ns/场景已变）：丢弃，不碰已重建的控件
             btn->setEnabled(true);
@@ -1422,6 +1439,7 @@ private slots:
             if (*timedOut) {
                 flashBtn(btn, false,
                          QStringLiteral("拉取超时（10 秒）：集群可能不可达或响应过慢"));
+                setResHint(hint, QStringLiteral("拉取超时（10 秒）：集群不可达或响应过慢 —— 可稍后点右侧刷新重试，或直接手动输入"), true);
                 return;
             }
             if (code != 0) {
@@ -1429,6 +1447,9 @@ private slots:
                 flashBtn(btn, false, err.isEmpty()
                                      ? QStringLiteral("kubectl 失败（退出码 %1）").arg(code)
                                      : err);
+                setResHint(hint, (err.isEmpty()
+                                      ? QStringLiteral("kubectl 失败（退出码 %1）").arg(code)
+                                      : err) + QStringLiteral(" —— 可切换集群/命名空间后重试"), true);
                 return;
             }
             // -o name 行格式：<resource>/<name>（可能带 api 组，如 deployment.apps/name）
@@ -1446,11 +1467,20 @@ private slots:
                 target->clear();
                 target->addItems(names);
                 target->setCurrentText(cur);
+                if (!defHint.isEmpty()) target->setPlaceholderText(defHint);   // 还原默认占位
                 target->blockSignals(false);
                 scheduleRegen();
                 flashBtn(btn, true, QStringLiteral("已拉取 %1 项 · 点击重新拉取").arg(names.size()));
+                setResHint(hint, QString(), false);
             } else {
                 flashBtn(btn, false, QStringLiteral("当前命名空间没有 %1（可换命名空间或手动输入）").arg(res));
+                // 明确告知“这个命名空间下就是没有这类资源”，并给出下一步动作
+                setResHint(hint, clusterScoped || ns.isEmpty()
+                                     ? QStringLiteral("集群中没有 %1 —— 可点右侧刷新重试，或直接手动输入名称").arg(res)
+                                     : QStringLiteral("命名空间「%2」下没有 %1 —— 可切换上方命名空间、点刷新重试，或直接手动输入名称").arg(res, ns),
+                           true);
+                target->setPlaceholderText(QStringLiteral("（%1 下暂无 %2，可手动输入）")
+                                               .arg(clusterScoped ? QStringLiteral("集群") : ns, res));
             }
         });
         p->start(kubectlPath(), args);
@@ -1513,9 +1543,14 @@ private:
                 return s;
             }
             case FieldDef::ResPick: {
-                // 可编辑下拉 + 刷新按钮：既能选真实列表，也能手动输入
+                // 可编辑下拉 + 刷新按钮 + 行内状态提示：既能选真实列表，也能手动输入；
+                // 拉取中/该命名空间没有该类资源/失败原因都直接显示在输入框下方，不用悬停猜
                 auto* host = new QWidget;
-                auto* lay = new QHBoxLayout(host);
+                auto* col = new QVBoxLayout(host);
+                col->setContentsMargins(0, 0, 0, 0);
+                col->setSpacing(3);
+                auto* row = new QWidget;
+                auto* lay = new QHBoxLayout(row);
                 lay->setContentsMargins(0, 0, 0, 0);
                 lay->setSpacing(6);
                 auto* c = new QComboBox;
@@ -1530,10 +1565,16 @@ private:
                 b->setToolTip(QStringLiteral("从当前集群拉取该类资源的真实名称列表（需本机 kubectl）；也可直接手动输入"));
                 lay->addWidget(c, 1);
                 lay->addWidget(b);
+                auto* hint = new QLabel;
+                hint->setObjectName(QStringLiteral("resPickHint"));
+                hint->setWordWrap(true);
+                hint->hide();
+                col->addWidget(row);
+                col->addWidget(hint);
                 connect(c, &QComboBox::currentTextChanged, this, [this](const QString&) { scheduleRegen(); });
                 connect(c, &QComboBox::editTextChanged, this, [this](const QString&) { scheduleRegen(); });
-                connect(b, &QPushButton::clicked, this, [this, c, b, f] { fetchResourceNames(c, b, f); });
-                m_resPickers.append({c, b, f});
+                connect(b, &QPushButton::clicked, this, [this, c, b, f, hint] { fetchResourceNames(c, b, f, hint); });
+                m_resPickers.append({c, b, f, hint});
                 return host;
             }
             case FieldDef::Line:
@@ -1563,7 +1604,7 @@ private:
     QPushButton* m_copyBtn = nullptr;
     QString m_lastCmd;
     QHash<QString, QWidget*> m_widgets;
-    struct ResPickInfo { QComboBox* combo; QPushButton* btn; FieldDef f; };
+    struct ResPickInfo { QComboBox* combo; QPushButton* btn; FieldDef f; QLabel* hint = nullptr; };
     QList<ResPickInfo> m_resPickers;
     QTimer m_autoFetchTimer;
     QString m_kubectlPath;

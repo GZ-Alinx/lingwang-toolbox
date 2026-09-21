@@ -72,6 +72,7 @@ sudo xattr -rd com.apple.quarantine "/Applications/灵王工具箱.app"
 - **集群（context）**：自动读取 `$KUBECONFIG`（多文件自动合并）与 `~/.kube/config`；每次进入页面自动重读，外部新增集群无需重启
 - **命名空间**：选择 context 后自动执行 `kubectl get ns` 填充下拉（也可手动输入，留空则命令不带 `-n`）
 - **资源 / Pod / 对象名称**：命名空间或资源类型（pods → deployments …）一变，相关名称下拉 0.5 秒内自动重拉真实列表；也可点行内刷新按钮手动拉取或直接手输
+- **行内状态提示**：每个名称输入框下方实时显示「正在拉取… / 命名空间「xxx」下没有 pods（可切换命名空间或手动输入）/ 拉取超时 / kubectl 报错原文」——空结果与失败原因一眼可见，不用悬停猜测
 - 常显连接状态条：绿色 `✓ 已连接"集群名" · N 个命名空间（kubectl 版本）` / 红色直接给出失败原因与解决命令；未安装 kubectl 可一键安装（装到用户数据目录，Program Files / /Applications 下也可用）
 
 ## 🛠️ 从源码构建
