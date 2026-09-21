@@ -1,0 +1,60 @@
+name: macOS Smoke (K8s crash repro)
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.8.2 (clang arm64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.2'
+          cache: true
+
+      - name: Configure (with smoke target)
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_SMOKE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build smoke binary
+        run: cmake --build build --target lingwtools-smoke
+
+      - name: Run smoke (K8s 命令生成器)
+        id: smoke0
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          ./build/lingwtools-smoke 0 2>&1 | tee smoke0.log
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Run smoke (K8s YAML 模板对照)
+        id: smoke1
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          ./build/lingwtools-smoke 1 2>&1 | tee smoke1.log
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Crash reports
+        if: always()
+        run: |
+          echo "--- DiagnosticReports ---"
+          ls -lt ~/Library/Logs/DiagnosticReports/ 2>/dev/null | head -10 || true
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/lingwtools-smoke-*.ips 2>/dev/null | head -2); do
+            echo "===== $f ====="
+            head -c 4000 "$f"
+          done
+          echo "=== smoke0 exit: ${{ steps.smoke0.outputs.exit }} / smoke1 exit: ${{ steps.smoke1.outputs.exit }} ==="
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs
+          path: |
+            smoke0.log
+            smoke1.log
+          if-no-files-found: ignore

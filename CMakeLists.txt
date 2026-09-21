@@ -92,6 +92,8 @@ if(WIN32)
   list(APPEND APP_SOURCES resources/app.rc)
 endif()
 
+option(BUILD_SMOKE "构建 GUI 冒烟测试二进制（排查平台闪退用）" OFF)
+
 add_executable(lingwtools WIN32 ${APP_SOURCES} theme.qrc)
 
 target_include_directories(lingwtools PRIVATE src 3rdparty/mbedtls/include)
@@ -120,3 +122,22 @@ set_target_properties(lingwtools PROPERTIES
   MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
   MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
 )
+
+if(BUILD_SMOKE)
+  # 复用全部页面源码，仅替换入口：命令行运行，逐段打印定位崩溃点
+  list(REMOVE_ITEM APP_SOURCES src/main.cpp)
+  add_executable(lingwtools-smoke scripts/smoke_mac.cpp ${APP_SOURCES} theme.qrc)
+  target_include_directories(lingwtools-smoke PRIVATE src 3rdparty/mbedtls/include)
+  target_compile_definitions(lingwtools-smoke PRIVATE APP_VERSION="${PROJECT_VERSION}")
+  target_link_libraries(lingwtools-smoke PRIVATE
+    Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent
+    yaml-cpp qrencode_core
+    mbedtls mbedx509 mbedcrypto
+  )
+  if(WIN32)
+    target_link_libraries(lingwtools-smoke PRIVATE iphlpapi ws2_32 bcrypt)
+  endif()
+  if(APPLE)
+    target_link_libraries(lingwtools-smoke PRIVATE "-framework Security" "-framework CoreFoundation")
+  endif()
+endif()
