@@ -155,4 +155,20 @@ if(BUILD_SMOKE)
   if(APPLE)
     target_link_libraries(lingwtools-smoke-all PRIVATE "-framework Security" "-framework CoreFoundation")
   endif()
+
+  # K8s 页专项探针：offscreen 观察诊断条 / ns / 资源名称下拉是否填充真实数据
+  add_executable(lingwtools-smoke-k8s scripts/smoke_k8s.cpp ${APP_SOURCES} theme.qrc)
+  target_include_directories(lingwtools-smoke-k8s PRIVATE src 3rdparty/mbedtls/include)
+  target_compile_definitions(lingwtools-smoke-k8s PRIVATE APP_VERSION="${PROJECT_VERSION}")
+  target_link_libraries(lingwtools-smoke-k8s PRIVATE
+    Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent
+    yaml-cpp qrencode_core
+    mbedtls mbedx509 mbedcrypto
+  )
+  if(WIN32)
+    target_link_libraries(lingwtools-smoke-k8s PRIVATE iphlpapi ws2_32 bcrypt)
+  endif()
+  if(APPLE)
+    target_link_libraries(lingwtools-smoke-k8s PRIVATE "-framework Security" "-framework CoreFoundation")
+  endif()
 endif()

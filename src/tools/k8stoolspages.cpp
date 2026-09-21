@@ -24,6 +24,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
+#include <QStandardPaths>
+#include <QSysInfo>
 #include <QCoreApplication>
 #include <QRegularExpression>
 #include <QHBoxLayout>
@@ -771,6 +773,7 @@ protected:
     void showEvent(QShowEvent* e) override {
         ToolPage::showEvent(e);
         if (m_shownOnce) {
+            loadKubeconfig();      // kubeconfig 可能已变（新增集群/外部切换 current-context）；保留已选 context
             fetchNamespaces();
             scheduleAutoFetchRes();
         }
@@ -807,6 +810,8 @@ public:
         r2->setSpacing(8);
         m_ctx = new QComboBox;                       // 集群上下文（kubeconfig）
         m_ctx->setObjectName(QStringLiteral("k8sCtx"));
+        m_ctx->setToolTip(QStringLiteral("kubeconfig 中的 context（支持 $KUBECONFIG 多文件与 ~/.kube/config 自动合并）。"
+                                        "切换后自动拉取该集群的命名空间与各场景资源名称列表"));
         m_ns = new QComboBox;                        // 命名空间（可选可输：留空 = 命令不带 -n）
         m_ns->setObjectName(QStringLiteral("k8sNs"));
         m_ns->setEditable(true);
@@ -921,8 +926,22 @@ public:
         buildForm(0);
     }
 
+    ~K8sCmdPage() override {
+        // 页面销毁（含应用退出）时温和收尾仍在运行的 kubectl 子进程：
+        // 直接析构运行中的 QProcess 会触发 "QProcess: Destroyed while process is still
+        // running" 并在退出路径上挂起（实测可致应用无法退出/闪退）
+        for (QProcess* p : findChildren<QProcess*>()) {
+            p->disconnect();                       // 断开回调，避免析构期间回到半死对象
+            if (p->state() != QProcess::NotRunning) {
+                p->kill();
+                p->waitForFinished(500);
+            }
+        }
+    }
+
 private slots:
     void buildForm(int idx) {
+        ++m_resGen;   // 场景切换：旧表单在途的资源名称拉取结果全部作废（防回调触碰已销毁控件）
         while (m_form->count()) {
             QLayoutItem* it = m_form->takeAt(0);
             if (it->widget()) it->widget()->deleteLater();
@@ -963,10 +982,7 @@ private slots:
         }
         // 注入全局集群上下文：ns 统一由「集群」卡片控制（场景内的 ns 字段已隐藏）
         v.insert(QStringLiteral("ns"), m_ns ? m_ns->currentText().trimmed() : QString());
-        // --context 用 context 名称（currentText）；「（不指定）/（未找到」占位项不注入
-        QString ctx = m_ctx ? m_ctx->currentText().trimmed() : QString();
-        if (ctx.startsWith(QLatin1Char('(')) || ctx.startsWith(QChar(0xFF08)))
-            ctx.clear();
+        const QString ctx = currentContext();
         QStringList cmds = sc.gen(v);
         if (!ctx.isEmpty()) {
             for (QString& c : cmds) {
@@ -981,6 +997,17 @@ private slots:
             flashOutput();
         }
     }
+    // 当前生效的 context 名称；「（不指定）/（未找到…」占位项（半角或全角括号开头）返回空。
+    // regen / 拉取命名空间 / 拉取资源名称必须共用同一判定，否则占位符会被当成
+    // 真实 context 传给 kubectl（--context （不指定）），导致所有下拉拉取必然失败。
+    QString currentContext() const {
+        if (!m_ctx) return QString();
+        const QString ctx = m_ctx->currentText().trimmed();
+        if (ctx.isEmpty() || ctx.startsWith(QLatin1Char('(')) || ctx.startsWith(QChar(0xFF08)))
+            return QString();
+        return ctx;
+    }
+
     // 解析 kubectl 可执行文件路径：
     // macOS GUI 应用不继承 shell 的 PATH（launchd 环境无 /opt/homebrew/bin 等），
     // 必须显式探测常见安装位置；Windows 走系统 PATH 即可。
@@ -988,13 +1015,25 @@ private slots:
         if (!m_kubectlPathResolved) {
             m_kubectlPathResolved = true;
             const QString appDir = QCoreApplication::applicationDirPath();
-            QStringList candidates = {
-                appDir + QStringLiteral("/kubectl"),                 // 工具箱一键安装位置
-                QStringLiteral("/opt/homebrew/bin/kubectl"),          // Apple Silicon Homebrew
-                QStringLiteral("/usr/local/bin/kubectl"),             // Intel Homebrew / 手动 / Docker Desktop
-                QStringLiteral("/usr/bin/kubectl"),
-                QStringLiteral("/opt/local/bin/kubectl"),             // MacPorts
-            };
+            // 一键安装位置：用户数据目录（Program Files / /Applications 下的程序目录通常不可写，
+            // 且 macOS 改写 .app 内部文件会破坏签名，故装到这里而不是程序目录）
+            const QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+            QStringList candidates;
+#ifdef Q_OS_WIN
+            // Windows 必须带 .exe：QFileInfo 对无扩展名路径判定不可执行，此前一键安装
+            // 到程序目录后探测仍失败的根因
+            candidates << appDir + QStringLiteral("/kubectl.exe")
+                       << dataDir + QStringLiteral("/kubectl.exe")
+                       << QStringLiteral("C:/Program Files/Kubernetes/kubectl.exe");
+#else
+            candidates << appDir + QStringLiteral("/kubectl")
+                       << dataDir + QStringLiteral("/kubectl")
+                       << QStringLiteral("/opt/homebrew/bin/kubectl")   // Apple Silicon Homebrew
+                       << QStringLiteral("/usr/local/bin/kubectl")      // Intel Homebrew / 手动 / Docker Desktop
+                       << QStringLiteral("/usr/bin/kubectl")
+                       << QStringLiteral("/opt/local/bin/kubectl")      // MacPorts
+                       << qEnvironmentVariable("HOME") + QStringLiteral("/.krew/bin/kubectl");  // krew
+#endif
 #ifdef Q_OS_MAC
             // GUI 应用不继承 shell PATH；用登录 shell 解析一次真实位置（覆盖 brew/asdf/krew/nvm 等）
             {
@@ -1008,6 +1047,9 @@ private slots:
                 }
             }
 #endif
+            // PATH 兜底探测（Windows 会按 PATHEXT 补全 .exe/.bat 等）
+            const QString onPath = QStandardPaths::findExecutable(QStringLiteral("kubectl"));
+            if (!onPath.isEmpty()) candidates << onPath;
             m_kubectlPath = QStringLiteral("kubectl");   // 兜底：PATH
             for (const QString& c : candidates)
                 if (QFileInfo(c).isExecutable()) { m_kubectlPath = c; break; }
@@ -1039,14 +1081,26 @@ private slots:
         m_kubectlLbl->setToolTip(m_kubectlOk
                                      ? QStringLiteral("使用：%1").arg(kubectlPath())
                                      : QStringLiteral("未找到可执行的 kubectl（已尝试程序目录、"
-                                                      "/opt/homebrew/bin、/usr/local/bin、登录 shell PATH）。\n"
+                                                      "用户数据目录、常规安装位置、PATH"
+#ifdef Q_OS_MAC
+                                                      "、登录 shell PATH）。\n"
                                                       "可点右侧按钮一键安装；若已安装仍提示未找到，"
-                                                      "在终端执行: sudo xattr -rd com.apple.quarantine $(command -v kubectl)"));
+                                                      "在终端执行: sudo xattr -rd com.apple.quarantine $(command -v kubectl)"
+#else
+                                                      "）。\n"
+                                                      "可点右侧按钮一键安装；若已安装，请确认其在系统 PATH 后重启工具箱"
+#endif
+                                                      ));
         m_installBtn->setVisible(!m_kubectlOk);
         if (!m_kubectlOk)
-            setDiag(QStringLiteral("✗ 未找到可执行的 kubectl（已尝试：程序目录 / /opt/homebrew/bin / /usr/local/bin / MacPorts / 登录 shell PATH）。"
-                                  "可点右侧“一键安装”；若已安装，终端执行: "
-                                  "sudo xattr -rd com.apple.quarantine $(command -v kubectl)"), false);
+            setDiag(QStringLiteral("✗ 未找到可执行的 kubectl（已尝试：程序目录 / 用户数据目录 / 常规安装位置 / PATH"
+#ifdef Q_OS_MAC
+                                   " / 登录 shell PATH）。可点右侧“一键安装”；若已安装，终端执行: "
+                                   "sudo xattr -rd com.apple.quarantine $(command -v kubectl)"
+#else
+                                   "）。可点右侧“一键安装”；若已安装，请确认其在系统 PATH 后重启工具箱"
+#endif
+                                   ), false);
     }
     // 一键下载安装 kubectl（dl.k8s.io 稳定版，放入程序目录）
     void installKubectl() {
@@ -1067,7 +1121,10 @@ private slots:
 #ifdef Q_OS_WIN
             const QString url = QStringLiteral("https://dl.k8s.io/release/%1/bin/windows/amd64/kubectl.exe").arg(ver);
 #elif defined(Q_OS_MAC)
-            const QString url = QStringLiteral("https://dl.k8s.io/release/%1/bin/darwin/arm64/kubectl").arg(ver);
+            // 按真实 CPU 架构下载（此前写死 arm64，Intel Mac 装上也无法运行）
+            const QString arch = QSysInfo::currentCpuArchitecture() == QLatin1String("arm64")
+                                     ? QStringLiteral("arm64") : QStringLiteral("amd64");
+            const QString url = QStringLiteral("https://dl.k8s.io/release/%1/bin/darwin/%2/kubectl").arg(ver, arch);
 #else
             const QString url = QStringLiteral("https://dl.k8s.io/release/%1/bin/linux/amd64/kubectl").arg(ver);
 #endif
@@ -1082,7 +1139,11 @@ private slots:
             connect(dl, &QNetworkReply::finished, this, [this, dl, ver] {
                 dl->deleteLater();
                 const QByteArray data = dl->readAll();
-                const QString path = QCoreApplication::applicationDirPath() + QStringLiteral("/kubectl");
+                // 装到用户数据目录：Program Files / /Applications 下的程序目录通常不可写，
+                // macOS 写入 .app 内部还会破坏代码签名导致应用被 Gatekeeper 拦截
+                const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+                QDir().mkpath(dir);
+                const QString path = dir + QStringLiteral("/kubectl");
 #ifdef Q_OS_WIN
                 const QString finalPath = path + QStringLiteral(".exe");
 #else
@@ -1109,43 +1170,68 @@ private slots:
 #endif
                 m_installBtn->setText(QStringLiteral("已下载 %1").arg(ver));
                 m_installBtn->setEnabled(false);
-                m_kubectlPathResolved = false;   // 重新探测（程序目录优先命中）
+                m_kubectlPathResolved = false;   // 重新探测（新位置优先命中）
                 detectKubectl();
+                if (m_kubectlOk) {
+                    // 安装成功立刻拉取：命名空间 + 当前场景资源名称，下拉即刻可用
+                    fetchNamespaces();
+                    scheduleAutoFetchRes();
+                }
             });
         });
     }
-    // 读取 ~/.kube/config：列出全部集群 context 及其默认命名空间
+    // 读取 kubeconfig（$KUBECONFIG 多文件 + 默认 ~/.kube/config）：列出全部集群 context 及其默认命名空间。
+    // 必须用 QFile 读字节流再交给 YAML 解析：Windows 上 yaml-cpp 的 LoadFile 走 ANSI
+    // 代码页打开文件，中文用户名的 home 路径（C:\Users\李四\...）会因编码不符而打开失败，
+    // 表现为「（未找到 ~/.kube/config）」，context 下拉永远为空。
     void loadKubeconfig() {
         QString home = qEnvironmentVariable("USERPROFILE");
         if (home.isEmpty()) home = qEnvironmentVariable("HOME");
-        const QString path = home + QStringLiteral("/.kube/config");
+        QStringList paths;
+        const QString kubeenv = qEnvironmentVariable("KUBECONFIG");
+        if (!kubeenv.isEmpty())
+#ifdef Q_OS_WIN
+            paths << kubeenv.split(QLatin1Char(';'), Qt::SkipEmptyParts);
+#else
+            paths << kubeenv.split(QLatin1Char(':'), Qt::SkipEmptyParts);
+#endif
+        paths << home + QStringLiteral("/.kube/config");
+
+        const QString prevCtx = currentContext();   // 重载（回到页面）时保留用户已选 context
         m_ctx->blockSignals(true);
         m_ctx->clear();
         m_ctx->addItem(QStringLiteral("（不指定）"), QString());
         QString current;
         QStringList nsList{QStringLiteral("default"), QStringLiteral("kube-system"), QStringLiteral("kube-public")};
         bool loaded = false;
-        try {
-            YAML::Node cfg = YAML::LoadFile(path.toStdString());
-            if (cfg["current-context"])
-                current = QString::fromStdString(cfg["current-context"].as<std::string>());
-            if (cfg["contexts"]) {
+        for (const QString& p : paths) {
+            QFile f(p);
+            if (!f.open(QIODevice::ReadOnly)) continue;
+            try {
+                const QByteArray raw = f.readAll();
+                YAML::Node cfg = YAML::Load(std::string(raw.constData(), size_t(raw.size())));
+                if (current.isEmpty() && cfg["current-context"])
+                    current = QString::fromStdString(cfg["current-context"].as<std::string>());
+                if (!cfg["contexts"]) continue;
                 for (const auto& c : cfg["contexts"]) {
                     if (!c["name"]) continue;
                     const QString name = QString::fromStdString(c["name"].as<std::string>());
                     QString ns = QStringLiteral("default");
                     if (c["context"] && c["context"]["namespace"])
                         ns = QString::fromStdString(c["context"]["namespace"].as<std::string>());
-                    m_ctx->addItem(name, ns);
-                    if (!nsList.contains(ns)) nsList << ns;
+                    if (m_ctx->findText(name) < 0) {   // 多文件重名 context：先出现者生效（与 kubectl 一致）
+                        m_ctx->addItem(name, ns);
+                        if (!nsList.contains(ns)) nsList << ns;
+                    }
                     loaded = true;
                 }
-            }
-        } catch (...) {}
+            } catch (...) {}
+        }
         if (!loaded) {
             m_ctx->addItem(QStringLiteral("（未找到 ~/.kube/config，可手填参数）"), QString());
         } else {
-            const int idx = m_ctx->findText(current);
+            const QString want = (!prevCtx.isEmpty() && m_ctx->findText(prevCtx) >= 0) ? prevCtx : current;
+            const int idx = m_ctx->findText(want);
             if (idx >= 0) m_ctx->setCurrentIndex(idx);
         }
         m_ctx->blockSignals(false);
@@ -1185,12 +1271,15 @@ private slots:
             flashBtn(m_fetchNsBtn, false, QStringLiteral("未检测到 kubectl，无法拉取；可直接手动输入命名空间"));
             return;
         }
+        // 代际防竞态：切 context 后旧请求可能比新请求更晚返回，若不拦截会用
+        // 旧集群的命名空间/状态覆盖新集群的正确结果（latest-wins）
+        const quint64 gen = ++m_nsGen;
         m_fetchNsBtn->setEnabled(false);
         m_fetchNsBtn->setToolTip(QStringLiteral("正在拉取命名空间…"));
         QStringList args{QStringLiteral("get"), QStringLiteral("namespaces"),
                           QStringLiteral("-o"), QStringLiteral("name")};
-        const QString ctx = m_ctx ? m_ctx->currentText() : QString();
-        if (!ctx.isEmpty() && !ctx.startsWith(QLatin1Char('(')))
+        const QString ctx = currentContext();
+        if (!ctx.isEmpty())
             args << QStringLiteral("--context") << ctx;
         auto* p = new QProcess(this);
         // 缓冲用共享指针：finished 回调（含多个提前 return）结束后自动释放，
@@ -1207,8 +1296,9 @@ private slots:
         connect(p, &QProcess::readyReadStandardOutput, p, [p, outBuf] { *outBuf += p->readAllStandardOutput(); });
         connect(p, &QProcess::readyReadStandardError, p, [p, errBuf] { *errBuf += p->readAllStandardError(); });
         connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-                [this, p, outBuf, errBuf, timedOut, ctx](int code) {
+                [this, p, outBuf, errBuf, timedOut, ctx, gen](int code) {
             p->deleteLater();
+            if (gen != m_nsGen) return;   // 过期结果（期间又发起了新拉取）：丢弃，不碰任何 UI
             m_fetchNsBtn->setEnabled(true);
             *outBuf += p->readAllStandardOutput();   // 兜底再收一次
             *errBuf += p->readAllStandardError();
@@ -1257,6 +1347,7 @@ private slots:
 
     // 集群/命名空间变化后，已拉取的资源名称列表作废（清列表、保留手动输入）
     void invalidateResPickers() {
+        ++m_resGen;   // 在途拉取全部作废：旧集群/旧命名空间的结果晚归时不得覆盖控件
         for (const ResPickInfo& r : m_resPickers) {
             if (!r.combo) continue;
             const QString t = r.combo->currentText();
@@ -1297,14 +1388,15 @@ private slots:
         const bool clusterScoped = isClusterScopedRes(res);
         const QString ns = m_ns ? m_ns->currentText().trimmed() : QString();
         QStringList args{QStringLiteral("get"), res, QStringLiteral("-o"), QStringLiteral("name")};
-        const QString ctx = m_ctx ? m_ctx->currentText() : QString();
-        if (!ctx.isEmpty() && !ctx.startsWith(QLatin1Char('(')))
+        const QString ctx = currentContext();
+        if (!ctx.isEmpty())
             args << QStringLiteral("--context") << ctx;
         if (!clusterScoped && !ns.isEmpty())
             args << QStringLiteral("-n") << ns;
         btn->setEnabled(false);
         btn->setToolTip(QStringLiteral("正在拉取 %1 …").arg(res));
         const bool rawRef = f.raw;   // moc 对初始化捕获敏感，先取局部值
+        const quint64 gen = m_resGen;   // 同一代内多个选择器并发拉取互不干扰；换代后全部作废
         auto* p = new QProcess(this);
         // 缓冲用共享指针：finished 回调（含多个提前 return）结束后自动释放，
         // 修复此前“先 delete 再兜底读取”的悬空指针（macOS 上足以导致闪退/丢数据）
@@ -1320,8 +1412,9 @@ private slots:
         connect(p, &QProcess::readyReadStandardOutput, p, [p, outBuf] { *outBuf += p->readAllStandardOutput(); });
         connect(p, &QProcess::readyReadStandardError, p, [p, errBuf] { *errBuf += p->readAllStandardError(); });
         connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-                [this, p, outBuf, errBuf, target, btn, rawRef, res, timedOut](int code) {
+                [this, p, outBuf, errBuf, target, btn, rawRef, res, timedOut, gen](int code) {
             p->deleteLater();
+            if (gen != m_resGen) return;   // 过期结果（集群/ns/场景已变）：丢弃，不碰已重建的控件
             btn->setEnabled(true);
             *outBuf += p->readAllStandardOutput();
             *errBuf += p->readAllStandardError();
@@ -1389,7 +1482,20 @@ private:
                 auto* c = new QComboBox;
                 c->addItems(f.choices);
                 if (!f.def.isEmpty()) c->setCurrentText(f.def);
-                connect(c, &QComboBox::currentTextChanged, this, [this](const QString&) { scheduleRegen(); });
+                // 该下拉若是资源名称选择器的类型来源（如「资源类型」 pods→deployments），
+                // 切换时联动失效并重拉名称列表——此前只重生成命令，名称下拉仍是旧类型的数据
+                const QString key = f.key;
+                connect(c, &QComboBox::currentTextChanged, this, [this, key](const QString&) {
+                    scheduleRegen();
+                    for (const ResPickInfo& r : m_resPickers) {
+                        if (r.combo && r.f.res.isEmpty()
+                            && (r.f.resKey.isEmpty() ? QStringLiteral("res") : r.f.resKey) == key) {
+                            invalidateResPickers();
+                            scheduleAutoFetchRes();
+                            break;
+                        }
+                    }
+                });
                 return c;
             }
             case FieldDef::Check: {
@@ -1466,6 +1572,8 @@ private:
     bool m_shownOnce = false;
     QLabel* m_diag = nullptr;
     QString m_kubectlVer;   // 当前表单中的资源名称可编辑下拉（集群/命名空间变化时失效）
+    quint64 m_nsGen = 0;    // 命名空间拉取代际：新拉取作废旧请求（防旧集群结果晚归覆盖新集群）
+    quint64 m_resGen = 0;   // 资源名称拉取代际：集群/ns/场景/资源类型变化时递增，过期回调直接丢弃
 };
 
 // ---------------- K8s YAML 模板页面 ----------------

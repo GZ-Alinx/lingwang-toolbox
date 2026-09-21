@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 [![Release](https://img.shields.io/badge/下载-Releases-4F8CFF)](../../releases/latest)
 
-## ✨ 功能（v1.5 共 36 个工具）
+## ✨ 功能（v1.0.1 共 36 个工具）
 
 ### 🌐 网络诊断
 | 工具 | 说明 |
@@ -52,7 +52,7 @@ Base64（文本 + 文件 + data URI）· URL 编解码 · 进制转换（2/8/10/
 
 | 平台 | 产物 | 说明 |
 |---|---|---|
-| Windows x64 | `lingwtools-setup-1.5.2.exe` | **安装向导**：可选安装路径、开始菜单/桌面快捷方式，含卸载器 |
+| Windows x64 | `lingwtools-setup-1.0.1.exe` | **安装向导**：可选安装路径、开始菜单/桌面快捷方式，含卸载器 |
 | Windows x64 | `lingwtools-windows-x64-portable.zip` | **绿色便携版**：解压双击即用，不写注册表 |
 | macOS Apple Silicon | `lingwtools-macos-arm64.dmg` | 打开后将 `灵王工具箱.app` 拖入 Applications |
 
@@ -67,10 +67,12 @@ sudo xattr -rd com.apple.quarantine "/Applications/灵王工具箱.app"
 # 方式二（不进终端）：Finder 里右键点击 灵王工具箱.app → “打开” → 再点“打开”
 ```
 
-## 🔎 K8s 命令生成器 · 连接状态自查
-打开 K8s 命令生成器，页面「场景与集群」卡片内有一条常显状态：
-- 绿色 `✓ 已连接"集群名" · N 个命名空间（kubectl 版本）` —— 自动拉取正常，命名空间/资源名称下拉均为真实数据
-- 红色 —— 直接写明失败原因（kubectl 未找到 / 拉取超时 / kubectl 报错原文）与解决命令
+## 🔎 K8s 命令生成器 · 集群三级联动
+「场景与集群」卡片内，**context → 命名空间 → 资源名称** 全部动态拉取真实数据：
+- **集群（context）**：自动读取 `$KUBECONFIG`（多文件自动合并）与 `~/.kube/config`；每次进入页面自动重读，外部新增集群无需重启
+- **命名空间**：选择 context 后自动执行 `kubectl get ns` 填充下拉（也可手动输入，留空则命令不带 `-n`）
+- **资源 / Pod / 对象名称**：命名空间或资源类型（pods → deployments …）一变，相关名称下拉 0.5 秒内自动重拉真实列表；也可点行内刷新按钮手动拉取或直接手输
+- 常显连接状态条：绿色 `✓ 已连接"集群名" · N 个命名空间（kubectl 版本）` / 红色直接给出失败原因与解决命令；未安装 kubectl 可一键安装（装到用户数据目录，Program Files / /Applications 下也可用）
 
 ## 🛠️ 从源码构建
 

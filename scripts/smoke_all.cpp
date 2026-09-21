@@ -5,6 +5,8 @@
 #include <QWidget>
 #include <QAbstractButton>
 #include <QComboBox>
+#include <QLabel>
+#include <QEventLoop>
 #include <QTimer>
 #include <cstdio>
 #include "registry.h"
@@ -19,6 +21,7 @@ static bool skipButton(const QString& t) {
     static const QList<QString> kws = {
         QStringLiteral("保存"), QStringLiteral("导出"), QStringLiteral("浏览"),
         QStringLiteral("选择文件"), QStringLiteral("选取文件"), QStringLiteral("打开文件"),
+        QStringLiteral("一键安装"),   // 会真实下载 kubectl（约 60MB），冒烟不点
         QStringLiteral("文件")};   // macOS 原生文件对话框不进 Qt 模态体系，无法自动关闭，全部跳过
     for (const QString& k : kws)
         if (t.contains(k)) return true;
@@ -60,18 +63,48 @@ static void runTool(int i) {
                         ctx->count(), qPrintable(prev), qPrintable(ctx->itemText(target)));
             std::fflush(stdout);
             ctx->setCurrentIndex(target);
-            for (int s = 0; s < 27; ++s) {          // 最多 ~13.5s（覆盖 10s 超时）
-                g_app->processEvents(QEventLoop::AllEvents, 500);
-                std::printf("smoke[k8s] t=%.1fs ns-items=%d ns=%s\n", (s + 1) * 0.5,
-                            nsBox->count(), qPrintable(nsBox->currentText()));
-                std::fflush(stdout);
+            // 注意：必须用真实事件循环等待（QEventLoop::exec），不能用 processEvents 批处理——
+            // 嵌套 processEvents 不会派发 QProcess 退出通知（socket notifier 饥饿），
+            // 会误判“命名空间未刷新”（真实应用走 exec() 主循环，不存在此问题）
+            {
+                QEventLoop loop;
+                QTimer::singleShot(13500, &loop, &QEventLoop::quit);   // 覆盖 10s 超时
+                for (int s = 0; s < 27; ++s) {
+                    QTimer::singleShot((s + 1) * 500, &loop, [&loop, page, nsBox, s] {
+                        auto* diagLbl = page->findChild<QLabel*>(QStringLiteral("k8sDiag"));
+                        std::printf("smoke[k8s] t=%.1fs ns-items=%d ns=%s diag=%s\n", (s + 1) * 0.5,
+                                    nsBox->count(), qPrintable(nsBox->currentText()),
+                                    qPrintable(diagLbl ? diagLbl->text() : QStringLiteral("(null)")));
+                        std::fflush(stdout);
+                        if (s == 26) loop.quit();
+                    });
+                }
+                loop.exec();
             }
             const int back = ctx->findText(prev);
             ctx->setCurrentIndex(back >= 0 ? back : 0);
-            g_app->processEvents(QEventLoop::AllEvents, 1500);
+            {
+                QEventLoop loop;
+                QTimer::singleShot(1500, &loop, &QEventLoop::quit);
+                loop.exec();
+            }
             std::printf("smoke[k8s] switched back; ns-items=%d ns=%s\n",
                         nsBox->count(), qPrintable(nsBox->currentText()));
             std::fflush(stdout);
+            // 资源名称下拉填充专项：等防抖+拉取完成后，枚举表单内全部可编辑下拉
+            // （ns 之外的可编辑下拉即资源名称选择器），列表项数 >0 说明拉到了真实数据
+            {
+                QEventLoop loop;
+                QTimer::singleShot(4500, &loop, &QEventLoop::quit);
+                loop.exec();
+            }
+            const auto combos = page->findChildren<QComboBox*>();
+            for (QComboBox* c : combos) {
+                if (!c->isEditable() || c == nsBox) continue;
+                std::printf("smoke[k8s] respick items=%d cur='%s'\n",
+                            c->count(), qPrintable(c->currentText()));
+                std::fflush(stdout);
+            }
         } else {
             std::printf("smoke[k8s] skip ctx probe (contexts=%d)\n", ctx ? ctx->count() : -1);
             std::fflush(stdout);
@@ -124,8 +157,16 @@ int main(int argc, char** argv) {
     g_host = new QWidget;
     g_host->resize(1280, 900);
     g_host->show();
-    std::printf("smoke: %d tools registered\n", int(ToolRegistry::all().size())); std::fflush(stdout);
-    QTimer::singleShot(200, g_host, [] { runTool(0); });
+    // SMOKE_ONLY=<工具id>：跳过其他页面，直接从指定工具开始（K8s 联动问题快速定位用）
+    int start = 0;
+    const QString only = qEnvironmentVariable("SMOKE_ONLY");
+    if (!only.isEmpty()) {
+        const auto& tools = ToolRegistry::all();
+        for (int i = 0; i < int(tools.size()); ++i)
+            if (tools[i].id == only) { start = i; break; }
+    }
+    std::printf("smoke: %d tools registered, start=%d\n", int(ToolRegistry::all().size()), start); std::fflush(stdout);
+    QTimer::singleShot(200, g_host, [start] { runTool(start); });
     const int rc = QApplication::exec();
     std::printf("smoke: exit rc=%d\n", rc); std::fflush(stdout);
     return rc;
