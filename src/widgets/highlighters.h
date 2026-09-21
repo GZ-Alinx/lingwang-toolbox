@@ -13,6 +13,9 @@ void rehighlightAll();          // 主题切换后重刷所有活跃高亮器
 } // namespace hl
 
 // 主题化高亮器基类：自动注册，主题切换时重建规则并重刷
+// 注意：派生类构造体内必须调用 rebuildRules()（而非基类）——基类构造期间虚分派
+// 会落入纯虚槽直接 abort（见 highlighters.cpp 顶部注释）；派生类构造期虚表已就绪，安全。
+// rebuildRules() 负责清空并重填规则（各实现开头 clear、结尾 rehighlight）。
 class ThemedHighlighter : public QSyntaxHighlighter {
     Q_OBJECT
 public:
@@ -23,7 +26,6 @@ public:
 protected:
     void highlightBlock(const QString& text) override;
     virtual void rebuildRules() = 0;
-    void rebuild();              // 清空规则并重刷
     QVector<QRegularExpression> m_patterns;
     QVector<QTextCharFormat> m_formats;
 };
@@ -32,7 +34,7 @@ protected:
 class CodeHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    explicit CodeHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
+    explicit CodeHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuildRules(); }
 protected:
     void rebuildRules() override;
 };
@@ -41,7 +43,7 @@ protected:
 class LogHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    explicit LogHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
+    explicit LogHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuildRules(); }
 protected:
     void rebuildRules() override;
 };
@@ -50,7 +52,7 @@ protected:
 class DiffHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    explicit DiffHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
+    explicit DiffHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuildRules(); }
 protected:
     void rebuildRules() override;
 };
@@ -59,7 +61,7 @@ protected:
 class YamlHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    explicit YamlHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
+    explicit YamlHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuildRules(); }
 protected:
     void rebuildRules() override;
 };
@@ -68,7 +70,7 @@ protected:
 class ShellHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    explicit ShellHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
+    explicit ShellHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuildRules(); }
 protected:
     void rebuildRules() override;
 };
@@ -77,7 +79,7 @@ protected:
 class KeyValueHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    explicit KeyValueHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
+    explicit KeyValueHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuildRules(); }
 protected:
     void rebuildRules() override;
 };

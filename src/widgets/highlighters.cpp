@@ -72,12 +72,6 @@ void ThemedHighlighter::highlightBlock(const QString& text) {
     }
 }
 
-void ThemedHighlighter::rebuild() {
-    m_patterns.clear();
-    m_formats.clear();
-    rehighlight();
-}
-
 void ThemedHighlighter::rehighlightThemed() {
     rebuildRules();
 }
@@ -97,9 +91,8 @@ void CodeHighlighter::rebuildRules() {
         m_formats.append(fmt);
     };
 
-    // 顺序即优先级：后写入的规则覆盖先前的重叠区域
+    // 顺序即优先级：后写入的规则覆盖先前的重叠区域（注释最后，保证注释内容不被二次着色）
     add(QStringLiteral("'[^'\\n]*'|\"[^\"]*\""), p.str);                              // 字符串
-    add(QStringLiteral("--[^\\n]*|#[^\\n]*"), p.dim);                                 // SQL/YAML 注释
     add(QStringLiteral("\\b(?i)(select|from|where|and|or|not|null|like|in|between|as|on|left|right|inner|outer|join|group|order|by|asc|desc|limit|offset|insert|into|values|update|set|delete|distinct|union|all|having|case|when|then|else|end|is|exists|count|sum|avg|max|min)\\b"),
         p.key, true);                                                                  // SQL 关键字
     add(QStringLiteral("(?<=^|[\\s,{}\\[\\]])(\"(?:[^\"\\\\]|\\\\.)*\")(?=\\s*:)"), p.key); // JSON 键
@@ -109,7 +102,8 @@ void CodeHighlighter::rebuildRules() {
     add(QStringLiteral("(?<=[{,])[A-Za-z_][\\w.-]*(?=\\s*:)"), p.key);              // flow map 键 {cpu: 100m}
     add(QStringLiteral("^[ \\t]*-[ \\t]"), p.accent);                                  // YAML 列表
     add(QStringLiteral("^[ \\t]*[^:#\\n]{1,40}(?=:)"), p.key);                         // YAML 键
-    rebuild();
+    add(QStringLiteral("--[^\\n]*|#[^\\n]*"), p.dim);                                 // SQL/YAML 注释（最后）
+    rehighlight();
 }
 
 // ---------------- YamlHighlighter ----------------
@@ -136,16 +130,16 @@ void YamlHighlighter::rebuildRules() {
         m_formats.append(fmt);
     };
 
-    add(QStringLiteral("#[^\\n]*"), comC);                                            // 注释
     add(QStringLiteral("'[^']*'|\"[^\"]*\""), strC);                                  // 引号串
     add(QStringLiteral("(?<=[{,])[A-Za-z_][\\w.-]*(?=\\s*:)"), keyC);                 // flow 键 {cpu: ..}
-    add(QStringLiteral("^[ \\t]*-?[ \\t]*[^\\s:#{}\\[\\]][^:\\n]{0,60}(?=:(\\s|$))"), keyC, true);  // 键（含 "- name:"）
-    add(QStringLiteral("\\b(?:true|false|null|yes|no|on|off)\\b"), boolC);            // 布尔
+    add(QStringLiteral("^[ \\t]*-?[ \\t]*\\K[^\\s:#{}\\[\\]][^:\\n]{0,60}(?=:(\\s|$))"), keyC, true);  // 键（含 "- name:"；\K 跳过缩进，只着色键名）
+    add(QStringLiteral("\\b(?:true|false|null|True|False|yes|no|on|off)\\b"), boolC);            // 布尔
     add(QStringLiteral("\\b\\d+(?:\\.\\d+)?(?:m|Mi|Gi|Ki|MB|GB|KB|ms|s|m|h)?\\b"), numC);  // 数字与带单位量值
     add(QStringLiteral("^[ \\t]*-[ \\t]+"), dashC);                                   // 列表符
     add(QStringLiteral("(?<=^|\\s)---(?=\\s|$)"), docC);                              // 文档分隔
     add(QStringLiteral("[&*][A-Za-z_]\\w*"), dashC);                                  // anchor/alias
-    rebuild();
+    add(QStringLiteral("#[^\\n]*"), comC);                                            // 注释（放最后：注释里的数字/引号/键不得被重新着色）
+    rehighlight();
 }
 
 // ---------------- ShellHighlighter ----------------
@@ -162,14 +156,14 @@ void ShellHighlighter::rebuildRules() {
         m_formats.append(fmt);
     };
 
-    add(QStringLiteral("#[^\\n]*"), p.dim);                                  // 注释
     add(QStringLiteral("'[^']*'|\"[^\"]*\""), p.str);                        // 引号串
     add(QStringLiteral("(?<=\\s)--?[A-Za-z][\\w-]*"), p.accent);             // -n / --context 等 flag
     add(QStringLiteral("\\b\\d+(?:\\.\\d+)?\\b"), p.num);                // 数字
     add(QStringLiteral("^kubectl\\b"), p.key, true);                         // kubectl
     add(QStringLiteral("\\b(pods?|deployments?|services?|ingresses?|configmaps?|secrets?|namespaces?|nodes?|serviceaccounts?|clusterroles?|clusterrolebindings?|roles?|rolebindings?|statefulsets?|daemonsets?|jobs|cronjobs|replicasets?|horizontalpodautoscalers?|customresourcedefinitions?|persistentvolumeclaims?|all)\\b"),
         p.boolean, true);                                                     // 资源类型
-    rebuild();
+    add(QStringLiteral("#[^\\n]*"), p.dim);                                  // 注释（最后）
+    rehighlight();
 }
 
 // ---------------- LogHighlighter ----------------
@@ -190,7 +184,7 @@ void LogHighlighter::rebuildRules() {
     add(QStringLiteral("✗.*|(?:失败|错误|超时|不可达|无效|已过期).*"), p.err);
     add(QStringLiteral("——.*|^追踪完成|^扫描完成|^解析完成|^查询中"), p.dim);
     add(QStringLiteral("\\b\\d+(?:\\.\\d+)?ms\\b"), p.accent);
-    rebuild();
+    rehighlight();
 }
 
 // ---------------- DiffHighlighter ----------------
@@ -215,7 +209,7 @@ void DiffHighlighter::rebuildRules() {
     dimFmt.setForeground(p.dim);
     m_patterns.append(QRegularExpression(QStringLiteral("^  .*|^（无差异）.*")));
     m_formats.append(dimFmt);
-    rebuild();
+    rehighlight();
 }
 
 // ---------------- KeyValueHighlighter ----------------
@@ -233,5 +227,5 @@ void KeyValueHighlighter::rebuildRules() {
     arrowFmt.setForeground(p.accent);
     m_patterns.append(QRegularExpression(QStringLiteral("→[^\\n]*")));
     m_formats.append(arrowFmt);
-    rebuild();
+    rehighlight();
 }

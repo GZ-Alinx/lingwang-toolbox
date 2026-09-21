@@ -179,4 +179,20 @@ if(BUILD_SMOKE)
   if(APPLE)
     target_link_libraries(lingwtools-smoke-k8s PRIVATE "-framework Security" "-framework CoreFoundation")
   endif()
+
+  # YAML 模板页高亮探针：dump 文档字符格式，验证键/注释/数字等着色是否生效
+  add_executable(lingwtools-probe-yaml scripts/probe_yaml_hl.cpp ${APP_SOURCES} theme.qrc)
+  target_include_directories(lingwtools-probe-yaml PRIVATE src 3rdparty/mbedtls/include)
+  target_compile_definitions(lingwtools-probe-yaml PRIVATE APP_VERSION="${PROJECT_VERSION}")
+  target_link_libraries(lingwtools-probe-yaml PRIVATE
+    Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent
+    yaml-cpp qrencode_core
+    mbedtls mbedx509 mbedcrypto
+  )
+  if(WIN32)
+    target_link_libraries(lingwtools-probe-yaml PRIVATE iphlpapi ws2_32 bcrypt)
+  endif()
+  if(APPLE)
+    target_link_libraries(lingwtools-probe-yaml PRIVATE "-framework Security" "-framework CoreFoundation")
+  endif()
 endif()
