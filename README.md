@@ -67,9 +67,16 @@ sudo xattr -rd com.apple.quarantine "/Applications/灵王工具箱.app"
 # 方式二（不进终端）：Finder 里右键点击 灵王工具箱.app → “打开” → 再点“打开”
 ```
 
+## 🔎 K8s 命令生成器 · 连接状态自查
+打开 K8s 命令生成器，页面「场景与集群」卡片内有一条常显状态：
+- 绿色 `✓ 已连接"集群名" · N 个命名空间（kubectl 版本）` —— 自动拉取正常，命名空间/资源名称下拉均为真实数据
+- 红色 —— 直接写明失败原因（kubectl 未找到 / 拉取超时 / kubectl 报错原文）与解决命令
+
 ## 🛠️ 从源码构建
 
 依赖：CMake ≥ 3.21、Qt 6.5+（Widgets / Network / Svg / Concurrent）、C++17 编译器。
+macOS 可 `brew install cmake ninja qt` 后：`cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && cmake --build build`。
+注意：从 Finder/Dock 启动的 GUI 应用不继承终端 PATH，工具箱已内置 kubectl 多路径探测（含登录 shell 解析），无需额外配置。
 第三方库（yaml-cpp、libqrencode、mbedTLS）已内置于 `3rdparty/`，无需额外安装。
 
 **Windows 一键构建**（编译 + 部署运行时 + Inno Setup 安装包）：
