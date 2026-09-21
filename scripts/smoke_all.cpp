@@ -17,7 +17,8 @@ static QWidget* g_host = nullptr;
 static bool skipButton(const QString& t) {
     static const QList<QString> kws = {
         QStringLiteral("保存"), QStringLiteral("导出"), QStringLiteral("浏览"),
-        QStringLiteral("选择文件"), QStringLiteral("选取文件"), QStringLiteral("打开文件")};
+        QStringLiteral("选择文件"), QStringLiteral("选取文件"), QStringLiteral("打开文件"),
+        QStringLiteral("文件")};   // macOS 原生文件对话框不进 Qt 模态体系，无法自动关闭，全部跳过
     for (const QString& k : kws)
         if (t.contains(k)) return true;
     return false;
