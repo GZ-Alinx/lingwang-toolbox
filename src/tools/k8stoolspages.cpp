@@ -1385,7 +1385,7 @@ private slots:
     void fetchResourceNames(QComboBox* target, QPushButton* btn, const FieldDef& f, QLabel* hint = nullptr) {
         if (!m_kubectlOk) {
             flashBtn(btn, false, QStringLiteral("未检测到 kubectl，无法拉取；可直接手动输入"));
-            setResHint(hint, QStringLiteral("未检测到 kubectl —— 可点右上角「一键安装」，或直接手动输入名称"), true);
+            setResHint(hint, QStringLiteral("未检测到 kubectl"), true);
             return;
         }
         // 解析资源类型：固定类型 > 表单字段动态值（如“资源类型”下拉）
@@ -1397,7 +1397,7 @@ private slots:
         }
         if (res.isEmpty() || res == QLatin1String("all")) {
             flashBtn(btn, false, QStringLiteral("请先选择有效的资源类型（all 不支持拉取名称）"));
-            setResHint(hint, QStringLiteral("资源类型为「all」时不支持拉取名称 —— 请选择具体类型，或直接手动输入"), true);
+            setResHint(hint, QStringLiteral("「all」不支持拉取名称"), true);
             return;
         }
         const bool clusterScoped = isClusterScopedRes(res);
@@ -1410,7 +1410,7 @@ private slots:
             args << QStringLiteral("-n") << ns;
         btn->setEnabled(false);
         btn->setToolTip(QStringLiteral("正在拉取 %1 …").arg(res));
-        setResHint(hint, QStringLiteral("正在从集群拉取 %1 列表…").arg(res), false);
+        setResHint(hint, QStringLiteral("正在拉取 %1…").arg(res), false);
         const bool rawRef = f.raw;   // moc 对初始化捕获敏感，先取局部值
         const QString defHint = f.hint;   // 默认占位文本（成功后还原用）
         const quint64 gen = m_resGen;   // 同一代内多个选择器并发拉取互不干扰；换代后全部作废
@@ -1439,17 +1439,17 @@ private slots:
             if (*timedOut) {
                 flashBtn(btn, false,
                          QStringLiteral("拉取超时（10 秒）：集群可能不可达或响应过慢"));
-                setResHint(hint, QStringLiteral("拉取超时（10 秒）：集群不可达或响应过慢 —— 可稍后点右侧刷新重试，或直接手动输入"), true);
+                setResHint(hint, QStringLiteral("拉取超时：集群不可达或过慢"), true);
                 return;
             }
             if (code != 0) {
-                const QString err = QString::fromUtf8(*errBuf).trimmed().left(120);
+                const QString err = QString::fromUtf8(*errBuf).trimmed().left(80);
                 flashBtn(btn, false, err.isEmpty()
                                      ? QStringLiteral("kubectl 失败（退出码 %1）").arg(code)
                                      : err);
-                setResHint(hint, (err.isEmpty()
-                                      ? QStringLiteral("kubectl 失败（退出码 %1）").arg(code)
-                                      : err) + QStringLiteral(" —— 可切换集群/命名空间后重试"), true);
+                setResHint(hint, err.isEmpty()
+                                     ? QStringLiteral("kubectl 失败（退出码 %1）").arg(code)
+                                     : err, true);
                 return;
             }
             // -o name 行格式：<resource>/<name>（可能带 api 组，如 deployment.apps/name）
@@ -1474,12 +1474,11 @@ private slots:
                 setResHint(hint, QString(), false);
             } else {
                 flashBtn(btn, false, QStringLiteral("当前命名空间没有 %1（可换命名空间或手动输入）").arg(res));
-                // 明确告知“这个命名空间下就是没有这类资源”，并给出下一步动作
                 setResHint(hint, clusterScoped || ns.isEmpty()
-                                     ? QStringLiteral("集群中没有 %1 —— 可点右侧刷新重试，或直接手动输入名称").arg(res)
-                                     : QStringLiteral("命名空间「%2」下没有 %1 —— 可切换上方命名空间、点刷新重试，或直接手动输入名称").arg(res, ns),
+                                     ? QStringLiteral("集群暂无 %1").arg(res)
+                                     : QStringLiteral("命名空间 %2 下暂无 %1").arg(res, ns),
                            true);
-                target->setPlaceholderText(QStringLiteral("（%1 下暂无 %2，可手动输入）")
+                target->setPlaceholderText(QStringLiteral("（%1 下暂无 %2）")
                                                .arg(clusterScoped ? QStringLiteral("集群") : ns, res));
             }
         });
