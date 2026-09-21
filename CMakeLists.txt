@@ -1,3 +1,11 @@
+# CMake 4 拒绝 <3.5 的兼容声明（Qt 6.8 配置与 yaml-cpp 均有旧声明），需要
+# CMAKE_POLICY_VERSION_MINIMUM 兜底。注意必须在 cmake_minimum_required 之前：
+# CI 的 PowerShell 会把 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 的值重格式化成 "3"
+# （非法值在第一行 cmake_minimum_required 即致命），此处对缺失/非法值统一按 3.5 处理。
+if(NOT CMAKE_POLICY_VERSION_MINIMUM MATCHES "^[0-9]+(\\.[0-9]+){1,3}$")
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+endif()
+
 cmake_minimum_required(VERSION 3.21)
 
 project(lingwtools VERSION 1.0.1 LANGUAGES C CXX)
