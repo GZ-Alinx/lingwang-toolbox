@@ -973,8 +973,7 @@ private slots:
                          {QStringLiteral("-lc"), QStringLiteral("command -v kubectl || command -v kubectl.exe")});
                 if (sh.waitForFinished(2500) && sh.exitCode() == 0) {
                     const QString found = QString::fromUtf8(sh.readAllStandardOutput()).trimmed();
-                    if (!found.isEmpty() && !found.contains(QLatin1Char('
-')))
+                    if (!found.isEmpty() && !found.contains(QLatin1Char('\n')))
                         candidates.prepend(found);
                 }
             }
