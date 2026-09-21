@@ -1630,43 +1630,68 @@ kind: Deployment
 metadata:
   name: my-app                    # 应用名
   namespace: default              # 命名空间
-  labels: {app: my-app}
+  labels:                         # 资源标签（选择器匹配/运维检索用）
+    app: my-app
 spec:
   replicas: 3                     # 副本数
   selector:
-    matchLabels: {app: my-app}
+    matchLabels:
+      app: my-app
   template:
     metadata:
-      labels: {app: my-app}
+      labels:                     # Pod 标签（必须与上面 selector 匹配）
+        app: my-app
     spec:
-      containers:
-        - name: my-app
-          image: nginx:1.25       # 镜像
-          ports: [{containerPort: 80}]
-          resources:              # 资源限额（生产建议必填）
-            requests: {cpu: 100m, memory: 128Mi}
-            limits: {cpu: 500m, memory: 256Mi}
-          livenessProbe:          # 存活探针：失败重启容器
-            httpGet: {path: /healthz, port: 80}
-            initialDelaySeconds: 10
-            periodSeconds: 10
-          readinessProbe:         # 就绪探针：未就绪不接流量
-            httpGet: {path: /ready, port: 80}
-            initialDelaySeconds: 5
-      # ---- 固定节点调度与污点容忍（pod spec 级，按需取消注释）----
-      # nodeSelector:             # 按「节点标签」固定节点池；先打标: kubectl label node <节点名> disktype=ssd
+      # ---- 调度：标签选节点 + 污点容忍（按需取消注释）----
+      # 给节点打标签: kubectl label node <节点名> disktype=ssd
+      # 查看节点污点: kubectl describe node <节点名> | grep Taints
+      # nodeSelector:             # ① 按「节点标签」圈定节点池
       #   disktype: ssd
-      # nodeName: node-01         # 直接点名节点（节点故障 Pod 不漂移，慎用）
-      # affinity:                 # 节点亲和：比 nodeSelector 更灵活（支持软约束/集合匹配）
+      # nodeName: node-01         # ② 直接点名节点（节点故障 Pod 不漂移，慎用）
+      # affinity:                 # ③ 节点亲和：比 nodeSelector 灵活（硬性必选 + 软性偏好）
       #   nodeAffinity:
       #     requiredDuringSchedulingIgnoredDuringExecution:
       #       nodeSelectorTerms:
       #         - matchExpressions:
-      #             - {key: kubernetes.io/arch, operator: In, values: [amd64]}
-      # tolerations:              # 污点容忍：允许调度到带污点的节点（如 master/GPU/专用节点）；查污点: kubectl describe node <节点名>
+      #             - key: kubernetes.io/arch
+      #               operator: In
+      #               values:
+      #                 - amd64
+      #     preferredDuringSchedulingIgnoredDuringExecution:
+      #       - weight: 80        # 软偏好权重（1-100），调度器尽量满足
+      #         preference:
+      #           matchExpressions:
+      #             - key: node-type
+      #               operator: In
+      #               values:
+      #                 - gpu
+      # tolerations:               # ④ 污点容忍：允许调度到带污点节点（master/GPU/专用节点）
       #   - key: node-role.kubernetes.io/control-plane
-      #     operator: Exists      # Exists=容忍任意值；Equal 需再配 value: xxx
-      #     effect: NoSchedule    # NoSchedule | PreferNoSchedule | NoExecute
+      #     operator: Exists       # Exists=容忍任意值；Equal 需再配 value
+      #     effect: NoSchedule     # NoSchedule | PreferNoSchedule | NoExecute
+      containers:
+        - name: my-app
+          image: nginx:1.25       # 镜像
+          ports:
+            - containerPort: 80
+          resources:              # 资源限额（生产建议必填）
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:          # 存活探针：失败重启容器
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:         # 就绪探针：未就绪不接流量
+            httpGet:
+              path: /ready
+              port: 80
+            initialDelaySeconds: 5
 )YAML")},
         {QStringLiteral("Service 服务"),
          QStringLiteral("ClusterIP 集群内访问 / NodePort 节点端口 / LoadBalancer 云负载均衡"),
@@ -1677,7 +1702,8 @@ metadata:
   namespace: default
 spec:
   type: ClusterIP                 # ClusterIP | NodePort | LoadBalancer
-  selector: {app: my-app}         # 匹配 Pod 标签
+  selector:                       # 匹配 Pod 标签
+    app: my-app
   ports:
     - name: http
       port: 80                    # Service 端口
@@ -1696,7 +1722,8 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: [app.example.com]
+    - hosts:
+        - app.example.com
       secretName: app-tls         # TLS 证书 Secret
   rules:
     - host: app.example.com
@@ -1707,7 +1734,8 @@ spec:
             backend:
               service:
                 name: my-app-svc
-                port: {number: 80}
+                port:
+                  number: 80
 )YAML")},
         {QStringLiteral("ConfigMap 配置"),
          QStringLiteral("非敏感配置：环境变量或挂载文件"),
@@ -1744,10 +1772,12 @@ metadata:
   name: my-app-data
   namespace: default
 spec:
-  accessModes: [ReadWriteOnce]    # RWO 单节点读写 | ROX 只读 | RWX 多节点
+  accessModes:
+    - ReadWriteOnce              # RWO 单节点读写 | ROX 只读 | RWX 多节点
   storageClassName: standard      # 集群 StorageClass 名
   resources:
-    requests: {storage: 10Gi}
+    requests:
+      storage: 10Gi
 )YAML")},
         {QStringLiteral("ServiceAccount 服务账号"),
          QStringLiteral("给 Pod/CI 用的身份，配合 Role/RoleBinding 授权"),
@@ -1766,12 +1796,26 @@ metadata:
   name: dev-viewer
   namespace: default
 rules:
-  - apiGroups: [""]               # "" = 核心组（pods/svc等）
-    resources: ["pods", "pods/log", "services", "configmaps"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "watch", "update"]   # 可加 create/delete
+  - apiGroups:
+      - ""                       # "" = 核心组（pods/svc等）
+    resources:
+      - pods
+      - pods/log
+      - services
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - get
+      - list
+      - watch
+      - update                   # 可按需加 create/delete
 )YAML")},
         {QStringLiteral("RoleBinding 角色绑定"),
          QStringLiteral("把 Role 绑到用户/组/服务账号（含 Role 模板可一并 apply）"),
@@ -1807,7 +1851,9 @@ spec:
     - type: Resource
       resource:
         name: cpu
-        target: {type: Utilization, averageUtilization: 80}
+        target:
+          type: Utilization
+          averageUtilization: 80
   behavior:                       # 稳定性（可选）
     scaleDown:
       stabilizationWindowSeconds: 300
@@ -1832,7 +1878,10 @@ spec:
           containers:
             - name: backup
               image: postgres:16
-              command: ["sh", "-c", "pg_dump ... > /backup/db.sql"]
+              command:
+                - sh
+                - -c
+                - pg_dump ... > /backup/db.sql
 )YAML")},
         {QStringLiteral("TLS 证书 Secret"),
          QStringLiteral("Ingress HTTPS 证书；推荐用「kubectl create secret tls --cert --key」自动生成"),
@@ -1875,7 +1924,8 @@ data:
 kind: Namespace
 metadata:
   name: dev
-  labels: {team: backend}
+  labels:
+    team: backend
 )YAML")},
         {QStringLiteral("DaemonSet 守护集"),
          QStringLiteral("每节点跑一个：日志采集/监控 Agent"),
@@ -1886,18 +1936,23 @@ metadata:
   namespace: kube-system
 spec:
   selector:
-    matchLabels: {app: log-agent}
+    matchLabels:
+      app: log-agent
   template:
     metadata:
-      labels: {app: log-agent}
+      labels:
+        app: log-agent
     spec:
-      tolerations:                # 容忍控制面污点，全节点部署
+      tolerations:                # 容忍控制面污点，实现全节点部署（含 master）
         - key: node-role.kubernetes.io/control-plane
           effect: NoSchedule
       containers:
         - name: agent
           image: fluent/fluentd:latest
-          resources: {requests: {cpu: 100m, memory: 128Mi}}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
 )YAML")},
     };
     return list;
