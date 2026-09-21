@@ -23,11 +23,9 @@ jobs:
         run: cmake --build build --target lingwtools-smoke
 
       - name: Run smoke (K8s 命令生成器)
-        id: smoke0
         continue-on-error: true
         run: |
-          lldb --batch -o "run" -o "bt all" -- ./build/lingwtools-smoke 0 2>&1 | tee smoke0.log || true
-          echo "done" >> "$GITHUB_OUTPUT"
+          lldb --batch -o "run" -k "bt all" -- ./build/lingwtools-smoke 0 2>&1 | tee smoke0.log || true
 
       - name: Run smoke (K8s YAML 模板对照)
         id: smoke1
@@ -44,7 +42,7 @@ jobs:
             echo "===== $f ====="
             head -c 4000 "$f"
           done
-          echo "=== smoke0 exit: ${{ steps.smoke0.outputs.exit }} / smoke1 exit: ${{ steps.smoke1.outputs.exit }} ==="
+          echo "=== smoke runs finished (see logs above) ==="
 
       - name: Upload logs
         if: always()
