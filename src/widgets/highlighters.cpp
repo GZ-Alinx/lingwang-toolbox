@@ -49,9 +49,11 @@ void rehighlightAll() {
 } // namespace hl
 
 // ---------------- ThemedHighlighter ----------------
+// 注意：基类构造期间不得调用纯虚 rebuildRules()——此时对象尚未成为派生类，
+// 虚分派会落入纯虚槽：macOS clang/libc++ 直接 abort（闪退），
+// Windows MinGW -O3 去虚化侥幸直调空定义。初始规则由各派生类构造体内 rebuild() 建立。
 ThemedHighlighter::ThemedHighlighter(QTextDocument* doc) : QSyntaxHighlighter(doc) {
     registry().append(QPointer<ThemedHighlighter>(this));
-    rebuildRules();
 }
 
 ThemedHighlighter::~ThemedHighlighter() = default;

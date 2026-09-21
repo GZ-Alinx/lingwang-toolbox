@@ -32,7 +32,7 @@ protected:
 class CodeHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    using ThemedHighlighter::ThemedHighlighter;
+    explicit CodeHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
 protected:
     void rebuildRules() override;
 };
@@ -41,7 +41,7 @@ protected:
 class LogHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    using ThemedHighlighter::ThemedHighlighter;
+    explicit LogHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
 protected:
     void rebuildRules() override;
 };
@@ -50,7 +50,7 @@ protected:
 class DiffHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    using ThemedHighlighter::ThemedHighlighter;
+    explicit DiffHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
 protected:
     void rebuildRules() override;
 };
@@ -59,7 +59,7 @@ protected:
 class YamlHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    using ThemedHighlighter::ThemedHighlighter;
+    explicit YamlHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
 protected:
     void rebuildRules() override;
 };
@@ -68,7 +68,7 @@ protected:
 class ShellHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    using ThemedHighlighter::ThemedHighlighter;
+    explicit ShellHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
 protected:
     void rebuildRules() override;
 };
@@ -77,7 +77,7 @@ protected:
 class KeyValueHighlighter : public ThemedHighlighter {
     Q_OBJECT
 public:
-    using ThemedHighlighter::ThemedHighlighter;
+    explicit KeyValueHighlighter(QTextDocument* doc) : ThemedHighlighter(doc) { rebuild(); }
 protected:
     void rebuildRules() override;
 };
