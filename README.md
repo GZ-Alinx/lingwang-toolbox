@@ -58,12 +58,13 @@ Base64（文本 + 文件 + data URI）· URL 编解码 · 进制转换（2/8/10/
 
 安装版与便携版功能完全一致；升级时直接运行新版 Setup 覆盖安装即可。
 
-**macOS 首次打开**（应用未做公证）：
+**macOS 首次打开提示“未验证/无法打开开发者”**（应用未做 Apple 公证，开源应用常见情况，二选一）：
 
 ```bash
-# 方式一：右键点击 app → 打开 → 再点“打开”
-# 方式二：终端执行
-xattr -cr /Applications/灵王工具箱.app
+# 方式一（推荐，一次到位）：把 app 拖入 Applications 后，终端执行并输入开机密码
+sudo xattr -rd com.apple.quarantine "/Applications/灵王工具箱.app"
+
+# 方式二（不进终端）：Finder 里右键点击 灵王工具箱.app → “打开” → 再点“打开”
 ```
 
 ## 🛠️ 从源码构建
