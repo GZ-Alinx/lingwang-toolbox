@@ -769,6 +769,11 @@ public:
         r2->addWidget(m_ctx, 1);
         r2->addWidget(new QLabel(QStringLiteral("命名空间:")));
         r2->addWidget(m_ns, 1);
+        m_fetchNsBtn = ui::button(QStringLiteral("⟳"));
+        m_fetchNsBtn->setToolTip(QStringLiteral("从当前集群获取真实命名空间列表（需本机 kubectl；也可直接输入任意命名空间）"));
+        m_fetchNsBtn->setFixedWidth(36);
+        connect(m_fetchNsBtn, &QPushButton::clicked, this, [this] { fetchNamespaces(); });
+        r2->addWidget(m_fetchNsBtn);
 
         r2->addWidget(m_kubectlLbl);
         m_installBtn = ui::button(QStringLiteral("一键安装 kubectl"));
@@ -1011,6 +1016,63 @@ private slots:
         m_ns->blockSignals(false);
         applyCtxNamespace();
     }
+    // 一键拉取当前集群的真实命名空间列表（kubectl get ns）
+    void fetchNamespaces() {
+        if (!m_kubectlOk) {
+            m_fetchNsBtn->setText(QStringLiteral("无kubectl"));
+            QTimer::singleShot(1800, this, [this] { m_fetchNsBtn->setText(QStringLiteral("⟳")); });
+            return;
+        }
+        m_fetchNsBtn->setEnabled(false);
+        m_fetchNsBtn->setText(QStringLiteral("获取中…"));
+        QStringList args{QStringLiteral("get"), QStringLiteral("namespaces"),
+                          QStringLiteral("-o"), QStringLiteral("name")};
+        const QString ctx = m_ctx ? m_ctx->currentText() : QString();
+        if (!ctx.isEmpty() && !ctx.startsWith(QLatin1Char('(')))
+            args << QStringLiteral("--context") << ctx;
+        auto* p = new QProcess(this);
+        auto* outBuf = new QByteArray;
+        auto* errBuf = new QByteArray;
+        connect(p, &QProcess::readyReadStandardOutput, p, [p, outBuf] { *outBuf += p->readAllStandardOutput(); });
+        connect(p, &QProcess::readyReadStandardError, p, [p, errBuf] { *errBuf += p->readAllStandardError(); });
+        connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+                [this, p, outBuf, errBuf](int code) {
+            p->deleteLater();
+            delete outBuf;
+            delete errBuf;
+            m_fetchNsBtn->setEnabled(true);
+            *outBuf += p->readAllStandardOutput();   // 兜底再收一次
+            *errBuf += p->readAllStandardError();
+            const QString raw = QString::fromUtf8(*outBuf);
+            if (code != 0 || raw.trimmed().isEmpty()) {
+                const QString err = QString::fromUtf8(*errBuf).trimmed().left(80);
+                m_fetchNsBtn->setText(code != 0 ? QStringLiteral("✗%1").arg(code) : QStringLiteral("✗空"));
+                m_fetchNsBtn->setToolTip(err.isEmpty() ? QStringLiteral("kubectl 无输出（退出码 %1）").arg(code) : err);
+                QTimer::singleShot(2500, this, [this] { m_fetchNsBtn->setText(QStringLiteral("⟳")); });
+                return;
+            }
+            QStringList ns;
+            const auto lines = raw.split(QChar::fromLatin1('\n'));
+            for (const QString& ln : lines) {
+                const QString t = ln.trimmed();
+                if (t.startsWith(QStringLiteral("namespace/")))
+                    ns << t.mid(QStringLiteral("namespace/").size());
+            }
+            if (!ns.isEmpty()) {
+                const QString cur = m_ns->currentText();
+                m_ns->blockSignals(true);
+                m_ns->clear();
+                m_ns->addItems(ns);
+                m_ns->setCurrentText(cur);
+                m_ns->blockSignals(false);
+                scheduleRegen();
+            }
+            m_fetchNsBtn->setText(QStringLiteral("✓"));
+            QTimer::singleShot(1800, this, [this] { m_fetchNsBtn->setText(QStringLiteral("⟳")); });
+        });
+        p->start(QStringLiteral("kubectl"), args);
+    }
+
     // 切换集群时把命名空间带成该 context 的默认值
     void applyCtxNamespace() {
         if (!m_ctx) return;
@@ -1067,7 +1129,8 @@ private:
 
     QComboBox* m_scenario = nullptr;
     QComboBox* m_ctx = nullptr;      // 集群上下文（读取 kubeconfig）
-    QComboBox* m_ns = nullptr;       // 命名空间（全局）
+    QComboBox* m_ns = nullptr;       // 命名空间（全局，可选可输）
+    QPushButton* m_fetchNsBtn = nullptr;
     QLabel* m_kubectlLbl = nullptr;
     QPushButton* m_installBtn = nullptr;
     QNetworkAccessManager m_nam;
