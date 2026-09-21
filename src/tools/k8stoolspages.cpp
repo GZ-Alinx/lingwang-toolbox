@@ -1625,7 +1625,7 @@ struct YamlTmpl {
 static const QList<YamlTmpl>& yamlTmpls() {
     static const QList<YamlTmpl> list = {
         {QStringLiteral("Deployment 无状态部署"),
-         QStringLiteral("最常用工作负载：副本管理/滚动更新/探针/资源限额"),
+         QStringLiteral("最常用工作负载：副本管理/滚动更新/探针/资源限额/固定节点调度与污点容忍"),
          QStringLiteral(R"YAML(apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1654,6 +1654,20 @@ spec:
           readinessProbe:         # 就绪探针：未就绪不接流量
             httpGet: {path: /ready, port: 80}
             initialDelaySeconds: 5
+      # ---- 固定节点调度与污点容忍（pod spec 级，按需取消注释）----
+      # nodeSelector:             # 按「节点标签」固定节点池；先打标: kubectl label node <节点名> disktype=ssd
+      #   disktype: ssd
+      # nodeName: node-01         # 直接点名节点（节点故障 Pod 不漂移，慎用）
+      # affinity:                 # 节点亲和：比 nodeSelector 更灵活（支持软约束/集合匹配）
+      #   nodeAffinity:
+      #     requiredDuringSchedulingIgnoredDuringExecution:
+      #       nodeSelectorTerms:
+      #         - matchExpressions:
+      #             - {key: kubernetes.io/arch, operator: In, values: [amd64]}
+      # tolerations:              # 污点容忍：允许调度到带污点的节点（如 master/GPU/专用节点）；查污点: kubectl describe node <节点名>
+      #   - key: node-role.kubernetes.io/control-plane
+      #     operator: Exists      # Exists=容忍任意值；Equal 需再配 value: xxx
+      #     effect: NoSchedule    # NoSchedule | PreferNoSchedule | NoExecute
 )YAML")},
         {QStringLiteral("Service 服务"),
          QStringLiteral("ClusterIP 集群内访问 / NodePort 节点端口 / LoadBalancer 云负载均衡"),

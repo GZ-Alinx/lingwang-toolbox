@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
         const QTextDocument* doc = edit->document();
         std::printf("blocks=%d\n", doc->blockCount());
         int shown = 0, coloredLines = 0;
-        for (int b = 0; b < doc->blockCount() && shown < 14; ++b) {
+        for (int b = 0; b < doc->blockCount() && shown < 40; ++b) {
             QTextBlock block = doc->findBlockByNumber(b);
             const QString text = block.text();
             if (text.trimmed().isEmpty()) continue;
