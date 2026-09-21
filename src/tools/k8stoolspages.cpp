@@ -832,6 +832,14 @@ public:
         r2->addWidget(m_installBtn);
         topLay->addWidget(row1);
         topLay->addWidget(row2);
+        // 集群连接状态常显：成功绿、失败红（失败原因直接可见，不藏悬停）
+        m_diag = new QLabel;
+        m_diag->setObjectName(QStringLiteral("k8sDiag"));
+        m_diag->setWordWrap(true);
+        m_diag->setStyleSheet(QStringLiteral(
+            "padding:6px 10px; border-radius:6px; background:rgba(76,175,80,0.12); color:#4CC565;"));
+        m_diag->hide();
+        topLay->addWidget(m_diag);
         m_desc = new QLabel;
         m_desc->setObjectName(QStringLiteral("pageDesc"));
         m_desc->setWordWrap(true);
@@ -1021,6 +1029,7 @@ private slots:
             ver = m.hasMatch() ? m.captured(1) : QStringLiteral("?");
         }
         m_kubectlOk = !ver.isEmpty();
+        m_kubectlVer = m_kubectlOk ? ver : QString();
         m_kubectlLbl->setText(m_kubectlOk
                                   ? QStringLiteral("kubectl v%1 ✓").arg(ver)
                                   : QStringLiteral("kubectl 未安装"));
@@ -1034,6 +1043,10 @@ private slots:
                                                       "可点右侧按钮一键安装；若已安装仍提示未找到，"
                                                       "在终端执行: sudo xattr -rd com.apple.quarantine $(command -v kubectl)"));
         m_installBtn->setVisible(!m_kubectlOk);
+        if (!m_kubectlOk)
+            setDiag(QStringLiteral("✗ 未找到可执行的 kubectl（已尝试：程序目录 / /opt/homebrew/bin / /usr/local/bin / MacPorts / 登录 shell PATH）。"
+                                  "可点右侧“一键安装”；若已安装，终端执行: "
+                                  "sudo xattr -rd com.apple.quarantine $(command -v kubectl)"), false);
     }
     // 一键下载安装 kubectl（dl.k8s.io 稳定版，放入程序目录）
     void installKubectl() {
@@ -1143,6 +1156,16 @@ private slots:
         m_ns->blockSignals(false);
         applyCtxNamespace();
     }
+    // 集群连接状态条：成功绿 / 失败红，常显于页面（让失败原因无处可藏）
+    void setDiag(const QString& text, bool ok) {
+        if (!m_diag) return;
+        m_diag->setText(text);
+        m_diag->setStyleSheet(ok
+            ? QStringLiteral("padding:6px 10px; border-radius:6px; background:rgba(76,175,80,0.12); color:#4CC565;")
+            : QStringLiteral("padding:6px 10px; border-radius:6px; background:rgba(248,81,73,0.14); color:#F56B63;"));
+        m_diag->show();
+    }
+
     // 状态反馈：按钮外观保持稳定（图标、尺寸不变），结果通过悬停提示 + 短暂描边表达
     void flashBtn(QPushButton* btn, bool ok, const QString& tip) {
         if (!btn) return;
@@ -1184,22 +1207,24 @@ private slots:
         connect(p, &QProcess::readyReadStandardOutput, p, [p, outBuf] { *outBuf += p->readAllStandardOutput(); });
         connect(p, &QProcess::readyReadStandardError, p, [p, errBuf] { *errBuf += p->readAllStandardError(); });
         connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-                [this, p, outBuf, errBuf, timedOut](int code) {
+                [this, p, outBuf, errBuf, timedOut, ctx](int code) {
             p->deleteLater();
             m_fetchNsBtn->setEnabled(true);
             *outBuf += p->readAllStandardOutput();   // 兜底再收一次
             *errBuf += p->readAllStandardError();
             const QString raw = QString::fromUtf8(*outBuf);
             if (*timedOut) {
-                flashBtn(m_fetchNsBtn, false,
-                         QStringLiteral("拉取超时（10 秒）：集群可能不可达，请检查集群状态或 kubectl 连通性"));
+                const QString msg = QStringLiteral("拉取超时（10 秒）：集群不可达（请确认集群已启动、kubeconfig 指向正确）");
+                flashBtn(m_fetchNsBtn, false, msg);
+                setDiag(QStringLiteral("✗ 命名空间拉取失败：") + msg, false);
                 return;
             }
             if (code != 0 || raw.trimmed().isEmpty()) {
-                const QString err = QString::fromUtf8(*errBuf).trimmed().left(120);
-                flashBtn(m_fetchNsBtn, false,
-                         err.isEmpty() ? QStringLiteral("kubectl 无输出（退出码 %1）").arg(code)
-                                       : err);
+                const QString err = errBuf->trimmed().isEmpty()
+                                        ? QStringLiteral("kubectl 无输出（退出码 %1）").arg(code)
+                                        : QString::fromUtf8(*errBuf).trimmed().left(160);
+                flashBtn(m_fetchNsBtn, false, err);
+                setDiag(QStringLiteral("✗ 命名空间拉取失败：%1").arg(err), false);
                 return;
             }
             QStringList ns;
@@ -1219,6 +1244,10 @@ private slots:
                 m_ns->blockSignals(false);
                 scheduleRegen();
                 flashBtn(m_fetchNsBtn, true, QStringLiteral("已拉取 %1 个命名空间 · 点击重新拉取").arg(ns.size()));
+                setDiag(QStringLiteral("✓ 已连接%1 · %2 个命名空间（kubectl %3）")
+                            .arg(ctx.isEmpty() ? QString() : QStringLiteral("“%1”").arg(ctx))
+                            .arg(ns.size())
+                            .arg(m_kubectlVer), true);
             } else {
                 flashBtn(m_fetchNsBtn, false, QStringLiteral("集群中没有命名空间？"));
             }
@@ -1434,7 +1463,9 @@ private:
     QString m_kubectlPath;
     bool m_kubectlPathResolved = false;
     QTimer m_nsTypeTimer;
-    bool m_shownOnce = false;   // 当前表单中的资源名称可编辑下拉（集群/命名空间变化时失效）
+    bool m_shownOnce = false;
+    QLabel* m_diag = nullptr;
+    QString m_kubectlVer;   // 当前表单中的资源名称可编辑下拉（集群/命名空间变化时失效）
 };
 
 // ---------------- K8s YAML 模板页面 ----------------
