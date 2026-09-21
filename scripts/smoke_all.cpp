@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QWidget>
 #include <QAbstractButton>
+#include <QComboBox>
 #include <QTimer>
 #include <cstdio>
 #include "registry.h"
@@ -47,6 +48,35 @@ static void runTool(int i) {
     page->setParent(g_host);
     page->show();
     g_app->processEvents(QEventLoop::AllEvents, 120);
+
+    // ---- K8s 命令生成器专项：切换集群上下文，观察 ns 列表自动刷新（含失败/超时路径） ----
+    if (tools[i].id == QLatin1String("k8scmd")) {
+        auto* ctx = page->findChild<QComboBox*>(QStringLiteral("k8sCtx"));
+        auto* nsBox = page->findChild<QComboBox*>(QStringLiteral("k8sNs"));
+        if (ctx && nsBox && ctx->count() >= 2) {
+            const QString prev = ctx->currentText();
+            const int target = ctx->count() - 1;   // 最后一项 context
+            std::printf("smoke[k8s] contexts=%d; switch '%s' -> '%s', watch ns items\n",
+                        ctx->count(), qPrintable(prev), qPrintable(ctx->itemText(target)));
+            std::fflush(stdout);
+            ctx->setCurrentIndex(target);
+            for (int s = 0; s < 27; ++s) {          // 最多 ~13.5s（覆盖 10s 超时）
+                g_app->processEvents(QEventLoop::AllEvents, 500);
+                std::printf("smoke[k8s] t=%.1fs ns-items=%d ns=%s\n", (s + 1) * 0.5,
+                            nsBox->count(), qPrintable(nsBox->currentText()));
+                std::fflush(stdout);
+            }
+            const int back = ctx->findText(prev);
+            ctx->setCurrentIndex(back >= 0 ? back : 0);
+            g_app->processEvents(QEventLoop::AllEvents, 1500);
+            std::printf("smoke[k8s] switched back; ns-items=%d ns=%s\n",
+                        nsBox->count(), qPrintable(nsBox->currentText()));
+            std::fflush(stdout);
+        } else {
+            std::printf("smoke[k8s] skip ctx probe (contexts=%d)\n", ctx ? ctx->count() : -1);
+            std::fflush(stdout);
+        }
+    }
 
     const auto btns = page->findChildren<QAbstractButton*>();
     std::printf("smoke[%d] clicking %d buttons\n", i + 1, int(btns.size())); std::fflush(stdout);

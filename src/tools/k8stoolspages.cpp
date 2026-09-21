@@ -766,6 +766,17 @@ static const QList<ScenarioDef>& scenarios() {
 // ---------------- K8s 命令生成器页面 ----------------
 class K8sCmdPage final : public ToolPage {
     Q_OBJECT
+protected:
+    // 每次切回本页都刷新真实列表（页面是缓存复用的，不刷就一直是旧数据）
+    void showEvent(QShowEvent* e) override {
+        ToolPage::showEvent(e);
+        if (m_shownOnce) {
+            fetchNamespaces();
+            scheduleAutoFetchRes();
+        }
+        m_shownOnce = true;
+    }
+
 public:
     K8sCmdPage() {
         ToolPage::setMeta(QStringLiteral("box"), QStringLiteral("K8s 命令生成器"),
@@ -795,7 +806,9 @@ public:
         r2->setContentsMargins(0, 0, 0, 0);
         r2->setSpacing(8);
         m_ctx = new QComboBox;                       // 集群上下文（kubeconfig）
+        m_ctx->setObjectName(QStringLiteral("k8sCtx"));
         m_ns = new QComboBox;                        // 命名空间（可选可输：留空 = 命令不带 -n）
+        m_ns->setObjectName(QStringLiteral("k8sNs"));
         m_ns->setEditable(true);
         m_ns->setPlaceholderText(QStringLiteral("可空 = 不带 -n，用上下文默认"));
         m_ns->setToolTip(QStringLiteral("命名空间；留空（或选第一行空项）则命令不带 -n，"
@@ -846,7 +859,16 @@ public:
             scheduleAutoFetchRes();
         });
         connect(m_ns, &QComboBox::currentTextChanged, this, [this](const QString&) { scheduleRegen(); });
-        connect(m_ns, &QComboBox::editTextChanged, this, [this](const QString&) { scheduleRegen(); });
+        connect(m_ns, &QComboBox::editTextChanged, this, [this](const QString&) {
+            scheduleRegen();
+            m_nsTypeTimer.start();   // 手动输入也联动：1 秒防抖后自动重拉资源名称列表
+        });
+        m_nsTypeTimer.setSingleShot(true);
+        m_nsTypeTimer.setInterval(1000);
+        connect(&m_nsTypeTimer, &QTimer::timeout, this, [this] {
+            invalidateResPickers();
+            scheduleAutoFetchRes();
+        });
 
         m_formHost = new QWidget;
         m_form = new QFormLayout(m_formHost);
@@ -1152,15 +1174,27 @@ private slots:
         // 修复此前“先 delete 再兜底读取”的悬空指针（macOS 上足以导致闪退/丢数据）
         auto outBuf = std::make_shared<QByteArray>();
         auto errBuf = std::make_shared<QByteArray>();
+        auto timedOut = std::make_shared<bool>(false);
+        QTimer::singleShot(10000, p, [p, timedOut] {
+            if (p->state() != QProcess::NotRunning) {
+                *timedOut = true;
+                p->kill();   // 集群不可达时 kubectl 会挂起很久，10 秒强制结束
+            }
+        });
         connect(p, &QProcess::readyReadStandardOutput, p, [p, outBuf] { *outBuf += p->readAllStandardOutput(); });
         connect(p, &QProcess::readyReadStandardError, p, [p, errBuf] { *errBuf += p->readAllStandardError(); });
         connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-                [this, p, outBuf, errBuf](int code) {
+                [this, p, outBuf, errBuf, timedOut](int code) {
             p->deleteLater();
             m_fetchNsBtn->setEnabled(true);
             *outBuf += p->readAllStandardOutput();   // 兜底再收一次
             *errBuf += p->readAllStandardError();
             const QString raw = QString::fromUtf8(*outBuf);
+            if (*timedOut) {
+                flashBtn(m_fetchNsBtn, false,
+                         QStringLiteral("拉取超时（10 秒）：集群可能不可达，请检查集群状态或 kubectl 连通性"));
+                return;
+            }
             if (code != 0 || raw.trimmed().isEmpty()) {
                 const QString err = QString::fromUtf8(*errBuf).trimmed().left(120);
                 flashBtn(m_fetchNsBtn, false,
@@ -1247,15 +1281,27 @@ private slots:
         // 修复此前“先 delete 再兜底读取”的悬空指针（macOS 上足以导致闪退/丢数据）
         auto outBuf = std::make_shared<QByteArray>();
         auto errBuf = std::make_shared<QByteArray>();
+        auto timedOut = std::make_shared<bool>(false);
+        QTimer::singleShot(10000, p, [p, timedOut] {
+            if (p->state() != QProcess::NotRunning) {
+                *timedOut = true;
+                p->kill();   // 集群不可达时 kubectl 会挂起很久，10 秒强制结束
+            }
+        });
         connect(p, &QProcess::readyReadStandardOutput, p, [p, outBuf] { *outBuf += p->readAllStandardOutput(); });
         connect(p, &QProcess::readyReadStandardError, p, [p, errBuf] { *errBuf += p->readAllStandardError(); });
         connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-                [this, p, outBuf, errBuf, target, btn, rawRef, res](int code) {
+                [this, p, outBuf, errBuf, target, btn, rawRef, res, timedOut](int code) {
             p->deleteLater();
             btn->setEnabled(true);
             *outBuf += p->readAllStandardOutput();
             *errBuf += p->readAllStandardError();
             const QString rawOut = QString::fromUtf8(*outBuf);
+            if (*timedOut) {
+                flashBtn(btn, false,
+                         QStringLiteral("拉取超时（10 秒）：集群可能不可达或响应过慢"));
+                return;
+            }
             if (code != 0) {
                 const QString err = QString::fromUtf8(*errBuf).trimmed().left(120);
                 flashBtn(btn, false, err.isEmpty()
@@ -1386,7 +1432,9 @@ private:
     QList<ResPickInfo> m_resPickers;
     QTimer m_autoFetchTimer;
     QString m_kubectlPath;
-    bool m_kubectlPathResolved = false;   // 当前表单中的资源名称可编辑下拉（集群/命名空间变化时失效）
+    bool m_kubectlPathResolved = false;
+    QTimer m_nsTypeTimer;
+    bool m_shownOnce = false;   // 当前表单中的资源名称可编辑下拉（集群/命名空间变化时失效）
 };
 
 // ---------------- K8s YAML 模板页面 ----------------
