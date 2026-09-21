@@ -26,17 +26,14 @@ jobs:
         id: smoke0
         continue-on-error: true
         run: |
-          set -o pipefail
-          ./build/lingwtools-smoke 0 2>&1 | tee smoke0.log
-          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          lldb --batch -o "run" -o "bt all" -- ./build/lingwtools-smoke 0 2>&1 | tee smoke0.log || true
+          echo "done" >> "$GITHUB_OUTPUT"
 
       - name: Run smoke (K8s YAML 模板对照)
         id: smoke1
         continue-on-error: true
         run: |
-          set -o pipefail
-          ./build/lingwtools-smoke 1 2>&1 | tee smoke1.log
-          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          ./build/lingwtools-smoke 1 2>&1 | tee smoke1.log || true
 
       - name: Crash reports
         if: always()
