@@ -25,7 +25,7 @@ jobs:
       - name: Run smoke-all (全部工具页+全部按钮点击)
         continue-on-error: true
         run: |
-          lldb --batch -o "run" -k "bt 12" -- ./build/lingwtools-smoke-all 2>&1 | tee smokeall.log || true
+          perl -e 'alarm 600; exec @ARGV' -- lldb --batch -o "run" -k "bt 12" -- ./build/lingwtools-smoke-all 2>&1 | tee smokeall.log || true
 
       - name: Run smoke (K8s 命令生成器)
         continue-on-error: true

@@ -45,7 +45,7 @@ static void runTool(int i) {
     std::printf("smoke[%d] created\n", i + 1); std::fflush(stdout);
     page->setParent(g_host);
     page->show();
-    g_app->processEvents(QEventLoop::AllEvents, 300);
+    g_app->processEvents(QEventLoop::AllEvents, 120);
 
     const auto btns = page->findChildren<QAbstractButton*>();
     std::printf("smoke[%d] clicking %d buttons\n", i + 1, int(btns.size())); std::fflush(stdout);
@@ -57,14 +57,14 @@ static void runTool(int i) {
         }
         std::printf("smoke[%d] click: %s\n", i + 1, qPrintable(b->text())); std::fflush(stdout);
         b->click();
-        g_app->processEvents(QEventLoop::AllEvents, 400);
+        g_app->processEvents(QEventLoop::AllEvents, 150);
     }
     // 结束可能启动的后台任务（Ping/HTTP 等流式页）
     for (QAbstractButton* b : page->findChildren<QAbstractButton*>()) {
         if (b->text().contains(QStringLiteral("停止")) && b->isEnabled()) {
             std::printf("smoke[%d] stop: %s\n", i + 1, qPrintable(b->text())); std::fflush(stdout);
             b->click();
-            g_app->processEvents(QEventLoop::AllEvents, 300);
+            g_app->processEvents(QEventLoop::AllEvents, 120);
         }
     }
     std::printf("smoke[%d] page done\n", i + 1); std::fflush(stdout);
