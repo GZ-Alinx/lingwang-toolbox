@@ -37,6 +37,7 @@ QPlainTextEdit[objectName="mono"], QTextEdit[objectName="mono"] {
     font-size: 12.5px;
 }
 QComboBox::drop-down { border: none; width: 22px; }
+QComboBox::down-arrow { image: url(:/theme/caret-down-dark.svg); width: 10px; height: 10px; }
 QComboBox QAbstractItemView {
     background: #26282E;
     border: 1px solid #31343B;

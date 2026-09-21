@@ -3,5 +3,7 @@
     <file alias="dark.qss">src/theme/dark.qss</file>
     <file alias="light.qss">src/theme/light.qss</file>
     <file alias="app.png">resources/icons/app.png</file>
+    <file alias="caret-down-dark.svg">resources/icons/caret-down-dark.svg</file>
+    <file alias="caret-down-light.svg">resources/icons/caret-down-light.svg</file>
   </qresource>
 </RCC>
