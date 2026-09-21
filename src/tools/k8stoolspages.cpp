@@ -827,15 +827,23 @@ public:
         m_regenTimer.setSingleShot(true);
         m_regenTimer.setInterval(30);
         connect(&m_regenTimer, &QTimer::timeout, this, &K8sCmdPage::regen);
+        m_autoFetchTimer.setSingleShot(true);
+        m_autoFetchTimer.setInterval(500);
+        connect(&m_autoFetchTimer, &QTimer::timeout, this, &K8sCmdPage::autoFetchResPickers);
         connect(m_ctx, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
             applyCtxNamespace();
-            invalidateResPickers();   // 集群变了，已拉取的资源列表作废
+            invalidateResPickers();      // 集群变了，已拉取的资源列表作废
+            fetchNamespaces();           // 自动拉取该集群真实命名空间
             scheduleRegen();
+            scheduleAutoFetchRes();      // 资源名称列表也按新集群刷新
         });
-        connect(m_ns, &QComboBox::currentTextChanged, this, [this](const QString&) {
-            invalidateResPickers();   // 命名空间变了，已拉取的资源列表作废
+        // 下拉选择命名空间 → 资源名称列表跟随刷新（手动逐字输入不触发拉取，避免打字即请求）
+        connect(m_ns, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+            invalidateResPickers();
             scheduleRegen();
+            scheduleAutoFetchRes();
         });
+        connect(m_ns, &QComboBox::currentTextChanged, this, [this](const QString&) { scheduleRegen(); });
         connect(m_ns, &QComboBox::editTextChanged, this, [this](const QString&) { scheduleRegen(); });
 
         m_formHost = new QWidget;
@@ -867,6 +875,8 @@ public:
         m_out->setMinimumHeight(200);   // 命令区兼任执行输出控制台
 
         detectKubectl();
+        fetchNamespaces();          // 初始即拉取当前集群的真实命名空间
+        scheduleAutoFetchRes();     // 初始即拉取当前场景的资源名称列表
 
         auto* pageScroll = new QScrollArea;
         pageScroll->setWidgetResizable(true);
@@ -901,6 +911,7 @@ private slots:
         m_desc->setText(sc.desc);
         m_lastCmd.clear();   // 切场景强制重刷
         regen();
+        scheduleAutoFetchRes();   // 新表单的资源名称下拉自动拉取真实列表
     }
     // 防抖统一驱动：任何控件变化 → 30ms 后重生成（合并高频输入，保证可靠刷新）
     void scheduleRegen() { m_regenTimer.start(); }
@@ -1170,14 +1181,24 @@ private slots:
 
     // 集群/命名空间变化后，已拉取的资源名称列表作废（清列表、保留手动输入）
     void invalidateResPickers() {
-        for (QComboBox* c : m_resPickers) {
-            if (!c) continue;
-            const QString t = c->currentText();
-            c->blockSignals(true);
-            c->clear();
-            c->setCurrentText(t);
-            c->blockSignals(false);
+        for (const ResPickInfo& r : m_resPickers) {
+            if (!r.combo) continue;
+            const QString t = r.combo->currentText();
+            r.combo->blockSignals(true);
+            r.combo->clear();
+            r.combo->setCurrentText(t);
+            r.combo->blockSignals(false);
         }
+    }
+    // 防抖调度：集群/命名空间/场景变化后自动拉取当前表单的资源名称列表
+    void scheduleAutoFetchRes() {
+        if (m_kubectlOk) m_autoFetchTimer.start();
+    }
+    // 拉取当前表单中全部资源名称下拉的真实列表（kubectl 可用时）
+    void autoFetchResPickers() {
+        if (!m_kubectlOk) return;
+        for (const ResPickInfo& r : m_resPickers)
+            if (r.combo && r.btn) fetchResourceNames(r.combo, r.btn, r.f);
     }
 
     // 拉取某类资源的真实名称列表填充到可编辑下拉（-o name）
@@ -1318,7 +1339,7 @@ private:
                 connect(c, &QComboBox::currentTextChanged, this, [this](const QString&) { scheduleRegen(); });
                 connect(c, &QComboBox::editTextChanged, this, [this](const QString&) { scheduleRegen(); });
                 connect(b, &QPushButton::clicked, this, [this, c, b, f] { fetchResourceNames(c, b, f); });
-                m_resPickers << c;
+                m_resPickers.append({c, b, f});
                 return host;
             }
             case FieldDef::Line:
@@ -1348,7 +1369,9 @@ private:
     QPushButton* m_copyBtn = nullptr;
     QString m_lastCmd;
     QHash<QString, QWidget*> m_widgets;
-    QList<QComboBox*> m_resPickers;
+    struct ResPickInfo { QComboBox* combo; QPushButton* btn; FieldDef f; };
+    QList<ResPickInfo> m_resPickers;
+    QTimer m_autoFetchTimer;
     QString m_kubectlPath;
     bool m_kubectlPathResolved = false;   // 当前表单中的资源名称可编辑下拉（集群/命名空间变化时失效）
 };
