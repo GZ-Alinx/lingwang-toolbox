@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QIcon>
 #include <QFormLayout>
 #include <QScrollArea>
 #include <QTimer>
@@ -38,7 +39,7 @@ struct FieldDef {
     QString key, label, hint;
     QStringList choices;
     QString def;   // Combo: 默认项；Check: "1"=勾选；Spin: "值|最小|最大"
-    // ResPick（资源名称：可⟳拉取选择 + 可手动输入）
+    // ResPick（资源名称：可拉取选择 + 可手动输入）
     QString res;     // 固定资源类型（空 = 按 resKey 字段动态取）
     QString resKey;  // 动态资源类型来源字段（默认 "res"）
     bool raw = false;// true = 填充 -o name 原始行（type/name 复合引用，如 rollout/set image 的目标）
@@ -84,7 +85,7 @@ static FieldDef line(const char* key, const char* label, const QString& def = QS
     f.def = def; f.hint = QString::fromUtf8(hint);
     return f;
 }
-// 资源名称字段：⟳ 拉取当前集群真实列表选择，也可手动输入
+// 资源名称字段：拉取当前集群真实列表选择，也可手动输入
 static FieldDef resname(const char* key, const char* label, const QString& def = QString(),
                         const char* hint = "", const char* res = "", const char* resKey = "res", bool raw = false) {
     FieldDef f;
@@ -127,7 +128,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.desc = QStringLiteral("列出资源；常用 -o wide / -o yaml，-l 按标签过滤，-A 全命名空间");
             sc.fields = {
                 combo("res", "资源类型", kRes, QStringLiteral("pods")),
-                resname("name", "名称（可空）", QString(), "留空=列出全部；⟳ 拉取列表"),
+                resname("name", "名称（可空）", QString(), "留空=列出全部；点刷新按钮拉取列表"),
                 line("ns", "命名空间", QStringLiteral("default"), "留空=当前上下文"),
                 line("selector", "标签选择器", QString(), "如 app=nginx"),
                 check("allns", "所有命名空间 (-A)"),
@@ -164,7 +165,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("日志 · Pod 日志 (logs)");
             sc.desc = QStringLiteral("查看容器日志；--tail 限制行数，--since 时间窗口，-p 上次崩溃的容器");
             sc.fields = {
-                resname("pod", "Pod 名称", QString(), "⟳ 拉取当前命名空间 Pod 列表", "pods"),
+                resname("pod", "Pod 名称", QString(), "点刷新按钮拉取当前命名空间 Pod 列表", "pods"),
                 line("container", "容器（可空）", QString(), "多容器时指定"),
                 line("ns", "命名空间", QStringLiteral("default")),
                 check("follow", "持续跟踪 (-f)", true),
@@ -219,7 +220,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("调试 · 进入容器 (exec)");
             sc.desc = QStringLiteral("在容器内执行命令或打开交互 shell");
             sc.fields = {
-                resname("pod", "Pod 名称", QString(), "⟳ 拉取当前命名空间 Pod 列表", "pods"),
+                resname("pod", "Pod 名称", QString(), "点刷新按钮拉取当前命名空间 Pod 列表", "pods"),
                 line("container", "容器（可空）"),
                 line("ns", "命名空间", QStringLiteral("default")),
                 check("it", "交互终端 (-it)", true),
@@ -240,7 +241,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("调试 · 文件传输 (cp)");
             sc.desc = QStringLiteral("本地与容器之间复制文件/目录（目录自动加 -r 提示）");
             sc.fields = {
-                resname("pod", "Pod 名称", QString(), "⟳ 拉取当前命名空间 Pod 列表", "pods"),
+                resname("pod", "Pod 名称", QString(), "点刷新按钮拉取当前命名空间 Pod 列表", "pods"),
                 line("ns", "命名空间", QStringLiteral("default")),
                 combo("dir", "方向", {QStringLiteral("下载到本地"), QStringLiteral("上传到容器")}, QStringLiteral("下载到本地")),
                 line("remote", "容器内路径", QStringLiteral("/tmp/log.txt")),
@@ -260,7 +261,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("调试 · 端口转发 (port-forward)");
             sc.desc = QStringLiteral("把集群内端口映射到本地，浏览器/调试器直连 Pod 或 Service");
             sc.fields = {
-                resname("target", "目标", QStringLiteral("pods/my-pod"), "pods/名称 或 deployments/名称 或 services/名称；⟳ 拉取", "pods", "res", true),
+                resname("target", "目标", QStringLiteral("pods/my-pod"), "pods/名称 或 deployments/名称 或 services/名称；点刷新按钮拉取", "pods", "res", true),
                 spin("lport", "本地端口", 8080, 1, 65535),
                 spin("rport", "集群端口", 80, 1, 65535),
                 line("ns", "命名空间", QStringLiteral("default"))};
@@ -277,7 +278,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.desc = QStringLiteral("实时 CPU / 内存占用（需 metrics-server）");
             sc.fields = {
                 combo("kind", "对象", {QStringLiteral("pod"), QStringLiteral("node")}, QStringLiteral("pod")),
-                resname("name", "名称（可空）", QString(), "留空=全部；⟳ 拉取列表", "", "kind"),
+                resname("name", "名称（可空）", QString(), "留空=全部；点刷新按钮拉取列表", "", "kind"),
                 line("ns", "命名空间", QStringLiteral("default")),
                 check("containers", "按容器细分")};
             sc.gen = [](const QHash<QString, QString>& v) {
@@ -366,7 +367,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("伸缩 · 自动伸缩 (autoscale)");
             sc.desc = QStringLiteral("创建 HPA：按 CPU 使用率在 min~max 间自动调节副本");
             sc.fields = {
-                resname("name", "Deployment 名称", QString(), "⟳ 拉取当前命名空间 Deployment 列表", "deployments"),
+                resname("name", "Deployment 名称", QString(), "点刷新按钮拉取当前命名空间 Deployment 列表", "deployments"),
                 spin("min", "最小副本", 2, 0, 1000),
                 spin("max", "最大副本", 10, 1, 1000),
                 spin("cpu", "目标 CPU 百分比", 80, 1, 100),
@@ -386,7 +387,7 @@ static const QList<ScenarioDef>& scenarios() {
                 combo("sub", "操作", {QStringLiteral("restart"), QStringLiteral("undo"), QStringLiteral("status"),
                                       QStringLiteral("history"), QStringLiteral("pause"), QStringLiteral("resume")},
                       QStringLiteral("restart")),
-                resname("res", "资源", QStringLiteral("deployments/my-app"), "如 deployments/名称；⟳ 拉取当前命名空间列表", "deployments", "res", true),
+                resname("res", "资源", QStringLiteral("deployments/my-app"), "如 deployments/名称；点刷新按钮拉取当前命名空间列表", "deployments", "res", true),
                 line("torev", "回滚到版本（可空）", QString(), "undo 时填，如 3"),
                 line("ns", "命名空间", QStringLiteral("default"))};
             sc.gen = [](const QHash<QString, QString>& v) {
@@ -468,7 +469,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.name = QStringLiteral("创建 · 服务暴露 (expose)");
             sc.desc = QStringLiteral("为工作负载创建 Service；对集群外选 NodePort/LoadBalancer");
             sc.fields = {
-                resname("res", "资源", QStringLiteral("deployments/my-app"), "如 deployments/名称；⟳ 拉取列表", "deployments", "res", true),
+                resname("res", "资源", QStringLiteral("deployments/my-app"), "如 deployments/名称；点刷新按钮拉取列表", "deployments", "res", true),
                 spin("port", "Service 端口", 80, 1, 65535),
                 spin("tport", "容器端口 (targetPort)", 8080, 1, 65535),
                 combo("type", "类型", {QStringLiteral("ClusterIP"), QStringLiteral("NodePort"), QStringLiteral("LoadBalancer")},
@@ -574,7 +575,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.fields = {
                 combo("mode", "来源", {QStringLiteral("从 CronJob 复制"), QStringLiteral("指定镜像")}, QStringLiteral("从 CronJob 复制")),
                 line("name", "Job 名称", QStringLiteral("db-backup-manual")),
-                resname("cronjob", "CronJob 名称", QString(), "⟳ 拉取当前命名空间 CronJob 列表", "cronjobs"),
+                resname("cronjob", "CronJob 名称", QString(), "点刷新按钮拉取当前命名空间 CronJob 列表", "cronjobs"),
                 line("image", "镜像（指定镜像时）", QStringLiteral("busybox")),
                 line("cmd", "命令（可空）", QStringLiteral("sh -c 'echo hello'")),
                 line("ns", "命名空间", QStringLiteral("default"))};
@@ -606,7 +607,7 @@ static const QList<ScenarioDef>& scenarios() {
             sc.desc = QStringLiteral("删除资源；--all 删同类型全部；强制删除仅用于终结卡死的资源");
             sc.fields = {
                 combo("res", "资源类型", kRes, QStringLiteral("pods")),
-                resname("name", "名称", QString(), "配合 --all 可留空；⟳ 拉取列表"),
+                resname("name", "名称", QString(), "配合 --all 可留空；点刷新按钮拉取列表"),
                 check("all", "删除全部 (--all)"),
                 spin("grace", "宽限期(秒)", 30, 0, 3600),
                 check("force", "强制 (--force --grace-period=0)"),
@@ -654,7 +655,7 @@ static const QList<ScenarioDef>& scenarios() {
                 line("role", "角色名", QStringLiteral("dev-viewer")),
                 line("verbs", "允许的动词", QStringLiteral("get,list,watch")),
                 line("resources", "允许的资源", QStringLiteral("pods,services,configmaps")),
-                resname("sa", "服务账号", QString(), "⟳ 拉取当前命名空间服务账号列表", "serviceaccounts"),
+                resname("sa", "服务账号", QString(), "点刷新按钮拉取当前命名空间服务账号列表", "serviceaccounts"),
                 line("ns", "命名空间", QStringLiteral("dev")),
                 check("token", "同时生成 Token 命令 (1.24+)")};
             sc.gen = [](const QHash<QString, QString>& v) {
@@ -719,7 +720,7 @@ static const QList<ScenarioDef>& scenarios() {
                 combo("sub", "操作", {QStringLiteral("cordon"), QStringLiteral("uncordon"), QStringLiteral("drain"),
                                       QStringLiteral("taint"), QStringLiteral("delete")},
                       QStringLiteral("drain")),
-                resname("node", "节点名", QString(), "⟳ 拉取集群节点列表（无需命名空间）", "nodes"),
+                resname("node", "节点名", QString(), "点刷新按钮拉取集群节点列表（无需命名空间）", "nodes"),
                 line("taint", "污点（taint 时填）", QStringLiteral("key1=value1:NoSchedule"), "去除污点在末尾加 -")};
             sc.gen = [](const QHash<QString, QString>& v) {
                 const QString sub = V(v, "sub"), node = V(v, "node");
@@ -796,15 +797,17 @@ public:
         m_ns->setEditable(true);
         m_ns->setPlaceholderText(QStringLiteral("可空 = 不带 -n，用上下文默认"));
         m_ns->setToolTip(QStringLiteral("命名空间；留空（或选第一行空项）则命令不带 -n，"
-                                        "使用当前上下文的默认命名空间。⟳ 可拉取真实列表"));
+                                        "使用当前上下文的默认命名空间。刷新按钮可拉取真实列表"));
         m_kubectlLbl = new QLabel;
         r2->addWidget(new QLabel(QStringLiteral("集群:")));
         r2->addWidget(m_ctx, 1);
         r2->addWidget(new QLabel(QStringLiteral("命名空间:")));
         r2->addWidget(m_ns, 1);
-        m_fetchNsBtn = ui::button(QStringLiteral("⟳"));
-        m_fetchNsBtn->setToolTip(QStringLiteral("从当前集群获取真实命名空间列表（需本机 kubectl；也可直接输入任意命名空间）"));
-        m_fetchNsBtn->setFixedWidth(36);
+        m_fetchNsBtn = ui::button(QString());
+        m_fetchNsBtn->setIcon(QIcon(QStringLiteral(":/theme/refresh.svg")));
+        m_fetchNsBtn->setIconSize(QSize(14, 14));
+        m_fetchNsBtn->setFixedSize(36, 34);
+        m_fetchNsBtn->setToolTip(QStringLiteral("从当前集群拉取真实命名空间列表（需本机 kubectl；也可直接输入）"));
         connect(m_fetchNsBtn, &QPushButton::clicked, this, [this] { fetchNamespaces(); });
         r2->addWidget(m_fetchNsBtn);
 
@@ -1059,15 +1062,27 @@ private slots:
         m_ns->blockSignals(false);
         applyCtxNamespace();
     }
+    // 状态反馈：按钮外观保持稳定（图标、尺寸不变），结果通过悬停提示 + 短暂描边表达
+    void flashBtn(QPushButton* btn, bool ok, const QString& tip) {
+        if (!btn) return;
+        if (!tip.isEmpty()) btn->setToolTip(tip);
+        btn->setStyleSheet(ok
+                               ? QStringLiteral("border: 2px solid #3FB950; border-radius: 6px;")
+                               : QStringLiteral("border: 2px solid #F85149; border-radius: 6px;"));
+        QTimer::singleShot(ok ? 1200 : 2500, btn, [btn, ok] {
+            btn->setStyleSheet(QString());
+            if (ok) btn->setToolTip(QStringLiteral("点击重新拉取"));
+        });
+    }
+
     // 一键拉取当前集群的真实命名空间列表（kubectl get ns）
     void fetchNamespaces() {
         if (!m_kubectlOk) {
-            m_fetchNsBtn->setText(QStringLiteral("无kubectl"));
-            QTimer::singleShot(1800, this, [this] { m_fetchNsBtn->setText(QStringLiteral("⟳")); });
+            flashBtn(m_fetchNsBtn, false, QStringLiteral("未检测到 kubectl，无法拉取；可直接手动输入命名空间"));
             return;
         }
         m_fetchNsBtn->setEnabled(false);
-        m_fetchNsBtn->setText(QStringLiteral("获取中…"));
+        m_fetchNsBtn->setToolTip(QStringLiteral("正在拉取命名空间…"));
         QStringList args{QStringLiteral("get"), QStringLiteral("namespaces"),
                           QStringLiteral("-o"), QStringLiteral("name")};
         const QString ctx = m_ctx ? m_ctx->currentText() : QString();
@@ -1088,10 +1103,10 @@ private slots:
             *errBuf += p->readAllStandardError();
             const QString raw = QString::fromUtf8(*outBuf);
             if (code != 0 || raw.trimmed().isEmpty()) {
-                const QString err = QString::fromUtf8(*errBuf).trimmed().left(80);
-                m_fetchNsBtn->setText(code != 0 ? QStringLiteral("✗%1").arg(code) : QStringLiteral("✗空"));
-                m_fetchNsBtn->setToolTip(err.isEmpty() ? QStringLiteral("kubectl 无输出（退出码 %1）").arg(code) : err);
-                QTimer::singleShot(2500, this, [this] { m_fetchNsBtn->setText(QStringLiteral("⟳")); });
+                const QString err = QString::fromUtf8(*errBuf).trimmed().left(120);
+                flashBtn(m_fetchNsBtn, false,
+                         err.isEmpty() ? QStringLiteral("kubectl 无输出（退出码 %1）").arg(code)
+                                       : err);
                 return;
             }
             QStringList ns;
@@ -1110,9 +1125,10 @@ private slots:
                 m_ns->setCurrentText(cur);
                 m_ns->blockSignals(false);
                 scheduleRegen();
+                flashBtn(m_fetchNsBtn, true, QStringLiteral("已拉取 %1 个命名空间 · 点击重新拉取").arg(ns.size()));
+            } else {
+                flashBtn(m_fetchNsBtn, false, QStringLiteral("集群中没有命名空间？"));
             }
-            m_fetchNsBtn->setText(QStringLiteral("✓"));
-            QTimer::singleShot(1800, this, [this] { m_fetchNsBtn->setText(QStringLiteral("⟳")); });
         });
         p->start(QStringLiteral("kubectl"), args);
     }
@@ -1132,8 +1148,7 @@ private slots:
     // 拉取某类资源的真实名称列表填充到可编辑下拉（-o name）
     void fetchResourceNames(QComboBox* target, QPushButton* btn, const FieldDef& f) {
         if (!m_kubectlOk) {
-            btn->setText(QStringLiteral("无kubectl"));
-            QTimer::singleShot(1800, this, [btn] { btn->setText(QStringLiteral("⟳")); });
+            flashBtn(btn, false, QStringLiteral("未检测到 kubectl，无法拉取；可直接手动输入"));
             return;
         }
         // 解析资源类型：固定类型 > 表单字段动态值（如“资源类型”下拉）
@@ -1144,8 +1159,7 @@ private slots:
                 res = rc->currentText().trimmed();
         }
         if (res.isEmpty() || res == QLatin1String("all")) {
-            btn->setText(QStringLiteral("✗类型"));
-            QTimer::singleShot(1800, this, [btn] { btn->setText(QStringLiteral("⟳")); });
+            flashBtn(btn, false, QStringLiteral("请先选择有效的资源类型（all 不支持拉取名称）"));
             return;
         }
         const bool clusterScoped = isClusterScopedRes(res);
@@ -1157,7 +1171,7 @@ private slots:
         if (!clusterScoped && !ns.isEmpty())
             args << QStringLiteral("-n") << ns;
         btn->setEnabled(false);
-        btn->setText(QStringLiteral("获取中…"));
+        btn->setToolTip(QStringLiteral("正在拉取 %1 …").arg(res));
         const bool rawRef = f.raw;   // moc 对初始化捕获敏感，先取局部值
         auto* p = new QProcess(this);
         auto* outBuf = new QByteArray;
@@ -1165,7 +1179,7 @@ private slots:
         connect(p, &QProcess::readyReadStandardOutput, p, [p, outBuf] { *outBuf += p->readAllStandardOutput(); });
         connect(p, &QProcess::readyReadStandardError, p, [p, errBuf] { *errBuf += p->readAllStandardError(); });
         connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-                [this, p, outBuf, errBuf, target, btn, rawRef](int code) {
+                [this, p, outBuf, errBuf, target, btn, rawRef, res](int code) {
             p->deleteLater();
             delete outBuf;
             delete errBuf;
@@ -1175,9 +1189,9 @@ private slots:
             const QString rawOut = QString::fromUtf8(*outBuf);
             if (code != 0) {
                 const QString err = QString::fromUtf8(*errBuf).trimmed().left(120);
-                btn->setText(QStringLiteral("✗%1").arg(code));
-                btn->setToolTip(err.isEmpty() ? QStringLiteral("kubectl 失败（退出码 %1）").arg(code) : err);
-                QTimer::singleShot(2500, this, [btn] { btn->setText(QStringLiteral("⟳")); });
+                flashBtn(btn, false, err.isEmpty()
+                                     ? QStringLiteral("kubectl 失败（退出码 %1）").arg(code)
+                                     : err);
                 return;
             }
             // -o name 行格式：<resource>/<name>（可能带 api 组，如 deployment.apps/name）
@@ -1197,11 +1211,10 @@ private slots:
                 target->setCurrentText(cur);
                 target->blockSignals(false);
                 scheduleRegen();
-                btn->setText(QStringLiteral("✓ %1").arg(names.size()));
+                flashBtn(btn, true, QStringLiteral("已拉取 %1 项 · 点击重新拉取").arg(names.size()));
             } else {
-                btn->setText(QStringLiteral("✓ 空"));
+                flashBtn(btn, false, QStringLiteral("当前命名空间没有 %1（可换命名空间或手动输入）").arg(res));
             }
-            QTimer::singleShot(2000, this, [btn] { btn->setText(QStringLiteral("⟳")); });
         });
         p->start(QStringLiteral("kubectl"), args);
     }
@@ -1250,7 +1263,7 @@ private:
                 return s;
             }
             case FieldDef::ResPick: {
-                // 可编辑下拉 + ⟳ 拉取按钮：既能选真实列表，也能手动输入
+                // 可编辑下拉 + 刷新按钮：既能选真实列表，也能手动输入
                 auto* host = new QWidget;
                 auto* lay = new QHBoxLayout(host);
                 lay->setContentsMargins(0, 0, 0, 0);
@@ -1260,8 +1273,10 @@ private:
                 c->setInsertPolicy(QComboBox::NoInsert);
                 if (!f.def.isEmpty()) c->setCurrentText(f.def);
                 if (!f.hint.isEmpty()) c->setPlaceholderText(f.hint);
-                auto* b = ui::button(QStringLiteral("⟳"));
-                b->setFixedWidth(36);
+                auto* b = ui::button(QString());
+                b->setIcon(QIcon(QStringLiteral(":/theme/refresh.svg")));
+                b->setIconSize(QSize(14, 14));
+                b->setFixedSize(36, 34);
                 b->setToolTip(QStringLiteral("从当前集群拉取该类资源的真实名称列表（需本机 kubectl）；也可直接手动输入"));
                 lay->addWidget(c, 1);
                 lay->addWidget(b);
