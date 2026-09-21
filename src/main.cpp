@@ -5,12 +5,16 @@
 #include <QFile>
 #include <QSettings>
 
+#ifndef APP_VERSION
+#define APP_VERSION "0.0.0"
+#endif
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     QApplication::setOrganizationName(QStringLiteral("LingWang"));
     QApplication::setApplicationName(QStringLiteral("LingWangToolbox"));
     QApplication::setApplicationDisplayName(QStringLiteral("灵王工具箱"));
-    QApplication::setApplicationVersion(QStringLiteral("1.5.2"));
+    QApplication::setApplicationVersion(QString::fromLatin1(APP_VERSION));
 
     // 界面字体
     QFont uiFont(QStringLiteral("Microsoft YaHei UI"), 10);

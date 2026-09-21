@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(lingwtools VERSION 1.5.2 LANGUAGES C CXX)
+project(lingwtools VERSION 1.5.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -95,6 +95,9 @@ endif()
 add_executable(lingwtools WIN32 ${APP_SOURCES} theme.qrc)
 
 target_include_directories(lingwtools PRIVATE src 3rdparty/mbedtls/include)
+
+# 版本号唯一来源：project(... VERSION)，供 main.cpp 的 APP_VERSION 使用
+target_compile_definitions(lingwtools PRIVATE APP_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(lingwtools PRIVATE
   Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent

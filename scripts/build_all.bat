@@ -32,7 +32,7 @@ if %errorlevel%==0 (
 echo.
 echo 完成！产物：
 echo   dist\lingwtools.exe               （便携版）
-echo   lingwtools-setup-1.0.2.exe        （安装向导）
+echo   lingwtools-setup-*.exe            （安装向导，见仓库根目录）
 exit /b 0
 
 :err

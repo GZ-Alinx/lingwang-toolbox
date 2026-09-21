@@ -4,7 +4,7 @@
 
 #define MyAppName "灵王工具箱"
 #define MyAppNameEn "LingWangToolbox"
-#define MyAppVersion "1.5.2"
+#define MyAppVersion "1.5.3"
 #define MyAppPublisher "LingWang"
 #define MyAppExeName "lingwtools.exe"
 
@@ -36,7 +36,9 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-CloseApplications=yes
+; 不弹“正在使用文件”对话框（RestartManager 在部分环境下显示进程描述为乱码），
+; 改为复制文件前静默结束正在运行的旧版本实例，升级体验更顺滑
+CloseApplications=no
 RestartApplications=no
 
 [Languages]
@@ -62,3 +64,27 @@ Filename: "{app}\{#MyAppExeName}"; Description: "立即运行 {#MyAppName}"; Fla
 
 [UninstallDelete]
 ; 预留：应用未来若产生缓存文件，可在此声明卸载时清理
+
+[Code]
+// 复制文件前静默结束正在运行的旧实例，避免文件占用导致安装失败
+procedure KillRunningApp;
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM {#MyAppExeName}', '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(500);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  KillRunningApp;
+  Result := '';
+end;
+
+// 卸载前同样结束运行中的实例
+function InitializeUninstall(): Boolean;
+begin
+  KillRunningApp;
+  Result := True;
+end;
