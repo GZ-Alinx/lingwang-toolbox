@@ -50,12 +50,14 @@ static void runTool(int i) {
     const auto btns = page->findChildren<QAbstractButton*>();
     std::printf("smoke[%d] clicking %d buttons\n", i + 1, int(btns.size())); std::fflush(stdout);
     for (QAbstractButton* b : btns) {
-        if (b->text().isEmpty()) continue;           // 图标按钮（如 ⟳ 刷新）也点
-        if (skipButton(b->text())) {
+        if (!b->isEnabled()) continue;
+        if (!b->text().isEmpty() && skipButton(b->text())) {
             std::printf("smoke[%d] skip: %s\n", i + 1, qPrintable(b->text())); std::fflush(stdout);
             continue;
         }
-        std::printf("smoke[%d] click: %s\n", i + 1, qPrintable(b->text())); std::fflush(stdout);
+        std::printf("smoke[%d] click: %s\n", i + 1,
+                    qPrintable(b->text().isEmpty() ? QStringLiteral("(icon)") : b->text()));
+        std::fflush(stdout);
         b->click();
         g_app->processEvents(QEventLoop::AllEvents, 150);
     }
@@ -73,10 +75,21 @@ static void runTool(int i) {
     QTimer::singleShot(30, g_host, [i] { runTool(i + 1); });
 }
 
+// 模态驱逐：文件选择/消息框等模态弹窗出现后自动关闭（QDialog::exec 的事件循环里 timer 仍触发）
+static void installModalKiller() {
+    auto* t = new QTimer(g_app);
+    QObject::connect(t, &QTimer::timeout, g_app, [] {
+        if (QWidget* m = QApplication::activeModalWidget())
+            m->close();
+    });
+    t->start(300);
+}
+
 int main(int argc, char** argv) {
     std::printf("smoke: boot\n"); std::fflush(stdout);
     QApplication app(argc, argv);
     g_app = &app;
+    installModalKiller();
     g_host = new QWidget;
     g_host->resize(1280, 900);
     g_host->show();
