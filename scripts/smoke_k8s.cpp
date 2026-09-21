@@ -8,6 +8,9 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QLabel>
+#include <QPushButton>
+#include <QPlainTextEdit>
+#include <QEventLoop>
 #include <QTimer>
 #include <cstdio>
 #include <cstdlib>
@@ -86,6 +89,41 @@ int main(int argc, char** argv) {
         for (QLabel* h : hints)
             std::printf("[hint] visible=%s text='%s'\n",
                         h->isVisible() ? "yes" : "no", qPrintable(h->text()));
+        // ---- 执行控制台验证：点「执行」→ 观察输出 → 停止 ----
+        QPushButton* execB = nullptr;
+        const auto btns = page->findChildren<QPushButton*>();
+        for (QPushButton* b : btns)
+            if (b->text().contains(QStringLiteral("执行"))) { execB = b; break; }
+        if (execB && execB->isEnabled()) {
+            std::printf("[exec] click 执行: '%s'\n", qPrintable(execB->text()));
+            execB->click();
+            {
+                QEventLoop loop;
+                QTimer::singleShot(6000, &loop, &QEventLoop::quit);
+                loop.exec();
+            }
+            // m_out 先创建、m_execOut 后创建：第二个 mono 文本框即执行输出
+            const auto edits = page->findChildren<QPlainTextEdit*>();
+            if (edits.size() >= 2) {
+                const QString out = edits.at(1)->toPlainText();
+                std::printf("[exec] output %d chars:\n", int(out.size()));
+                for (const QString& ln : out.split(QLatin1Char('\n')))
+                    if (!ln.trimmed().isEmpty()) std::printf("[exec]   %s\n", qPrintable(ln.left(90)));
+            }
+            for (QPushButton* b : page->findChildren<QPushButton*>())
+                if (b->text().contains(QStringLiteral("停止")) && b->isEnabled()) {
+                    std::printf("[exec] click 停止\n");
+                    b->click();
+                    break;
+                }
+            {
+                QEventLoop loop;
+                QTimer::singleShot(800, &loop, &QEventLoop::quit);
+                loop.exec();
+            }
+        } else {
+            std::printf("[exec] skip (button not found/disabled)\n");
+        }
         std::printf("K8S SMOKE DONE\n");
         std::fflush(stdout);
         app.quit();

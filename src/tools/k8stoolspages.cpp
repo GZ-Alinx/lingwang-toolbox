@@ -14,6 +14,8 @@
 #include <QFormLayout>
 #include <QScrollArea>
 #include <QTimer>
+#include <QMessageBox>
+#include <QScrollBar>
 
 #include <yaml-cpp/yaml.h>
 
@@ -75,6 +77,11 @@ static bool isClusterScopedRes(const QString& res) {
         QStringLiteral("csidrivers"), QStringLiteral("csinodes"), QStringLiteral("runtimeclasses"),
         QStringLiteral("certificatesigningrequests")};
     return cl.contains(res);
+}
+// 危险指令：删除资源 / 驱逐节点（不可撤销），执行前必须二次确认
+static bool isDangerousCmd(const QString& cmd) {
+    const QString c = cmd.trimmed();
+    return c.startsWith(QLatin1String("kubectl delete")) || c.startsWith(QLatin1String("kubectl drain"));
 }
 
 static FieldDef combo(const char* key, const char* label, const QStringList& choices, const QString& def) {
@@ -909,7 +916,34 @@ public:
         });
         pageLay->addWidget(ui::card(QStringLiteral("命令 · 参数变化实时更新（复制到终端执行）"), m_out, m_copyBtn));
 
-        m_out->setMinimumHeight(200);   // 命令区兼任执行输出控制台
+        m_out->setMinimumHeight(140);
+
+        // ---- 执行结果控制台：直接在本机运行上方命令，输出实时着色显示 ----
+        m_execOut = new QPlainTextEdit;
+        m_execOut->setObjectName(QStringLiteral("mono"));
+        m_execOut->setReadOnly(true);
+        m_execOut->setMaximumBlockCount(5000);   // 防超长输出（如 logs -f）撑爆内存
+        m_execOut->setPlaceholderText(QStringLiteral("点「执行」在本机运行上方命令，输出实时显示；delete/drain 类操作需二次确认"));
+        new LogHighlighter(m_execOut->document());
+        m_execBtn = ui::button(QStringLiteral("▶ 执行"), "primary");
+        m_execBtn->setToolTip(QStringLiteral("在本机依次执行上方生成的全部 kubectl 命令；危险操作（删除/驱逐）需二次确认"));
+        connect(m_execBtn, &QPushButton::clicked, this, [this] { runCommands(); });
+        m_stopBtn = ui::button(QStringLiteral("■ 停止"));
+        m_stopBtn->setEnabled(false);
+        connect(m_stopBtn, &QPushButton::clicked, this, [this] { stopExec(); });
+        m_clearBtn = ui::button(QStringLiteral("清空"));
+        connect(m_clearBtn, &QPushButton::clicked, this, [this] {
+            if (m_execRunning) return;   // 运行中不清空，防与流式输出竞争
+            m_execOut->clear();
+        });
+        auto* execBtns = new QWidget;
+        auto* ebl = new QHBoxLayout(execBtns);
+        ebl->setContentsMargins(0, 0, 0, 0);
+        ebl->setSpacing(8);
+        ebl->addWidget(m_execBtn);
+        ebl->addWidget(m_stopBtn);
+        ebl->addWidget(m_clearBtn);
+        pageLay->addWidget(ui::card(QStringLiteral("执行结果"), m_execOut, execBtns, true), 1);
 
         detectKubectl();
         fetchNamespaces();          // 初始即拉取当前集群的真实命名空间
@@ -992,6 +1026,14 @@ private slots:
         }
         const QString next = cmds.join(QLatin1Char('\n'));
         m_out->setPlainText(next);                 // 无条件重刷，绝不依赖信号时序
+        // 危险命令警示：执行按钮标红，提示将二次确认
+        bool danger = false;
+        for (const QString& c : cmds)
+            if (isDangerousCmd(c)) { danger = true; break; }
+        m_execBtn->setStyleSheet(danger
+            ? QStringLiteral("background:rgba(248,81,73,0.18); color:#F85149; border:1px solid #F85149;")
+            : QString());
+        m_execBtn->setText(danger ? QStringLiteral("▶ 执行（删除类·需确认）") : QStringLiteral("▶ 执行"));
         if (next != m_lastCmd) {
             m_lastCmd = next;
             flashOutput();
@@ -1485,6 +1527,119 @@ private slots:
         p->start(kubectlPath(), args);
     }
 
+    // ---------------- 命令执行控制台 ----------------
+    // 追加一行输出并滚动到底部（命令/结果着色由 LogHighlighter 完成：✓绿 ✗红）
+    void appendExec(const QString& text) {
+        if (!m_execOut) return;
+        m_execOut->appendPlainText(text);
+        auto bar = m_execOut->verticalScrollBar();
+        bar->setValue(bar->maximum());
+    }
+    void setExecRunning(bool running) {
+        m_execRunning = running;
+        m_execBtn->setEnabled(!running);
+        m_stopBtn->setEnabled(running);
+    }
+    // 依次执行命令生成区的全部 kubectl 命令；危险操作（delete/drain）二次确认后才放行
+    void runCommands() {
+        if (m_execRunning) return;
+        QStringList cmds;
+        for (const QString& ln : m_out->toPlainText().split(QLatin1Char('\n'))) {
+            const QString t = ln.trimmed();
+            if (t.startsWith(QLatin1String("kubectl"))) cmds << t;
+        }
+        if (cmds.isEmpty()) {
+            appendExec(QStringLiteral("—— 没有可执行的 kubectl 命令（当前场景未生成或留空）"));
+            return;
+        }
+        // 管道/重定向是 shell 语法，QProcess 不执行 shell，明确拒执行让用户去终端
+        for (const QString& c : cmds) {
+            if (c.contains(QLatin1Char('|')) || c.contains(QLatin1Char('>'))) {
+                appendExec(QStringLiteral("—— 命令含管道/重定向，不支持在工具箱内执行，请复制到终端运行：") + c);
+                return;
+            }
+        }
+        // 危险操作二次确认（两次独立确认框，任一次取消即中止）
+        QStringList dangers;
+        for (const QString& c : cmds)
+            if (isDangerousCmd(c)) dangers << c;
+        if (!dangers.isEmpty()) {
+            const auto b1 = QMessageBox::warning(this, QStringLiteral("危险操作确认（1/2）"),
+                QStringLiteral("即将执行删除类指令：\n\n%1\n\n被删除的资源无法恢复，是否继续？")
+                    .arg(dangers.join(QLatin1Char('\n'))),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (b1 != QMessageBox::Yes) {
+                appendExec(QStringLiteral("✗ 已取消（未执行任何命令）"));
+                return;
+            }
+            const auto b2 = QMessageBox::warning(this, QStringLiteral("危险操作确认（2/2）"),
+                QStringLiteral("二次确认：删除/驱逐操作不可撤销。\n\n%1\n\n确定执行？")
+                    .arg(dangers.join(QLatin1Char('\n'))),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (b2 != QMessageBox::Yes) {
+                appendExec(QStringLiteral("✗ 已取消（未执行任何命令）"));
+                return;
+            }
+        }
+        m_pendingCmds = cmds;
+        appendExec(QStringLiteral("—— %1 条命令开始执行 ————————————").arg(cmds.size()));
+        startNextCmd();
+    }
+    void startNextCmd() {
+        if (m_pendingCmds.isEmpty()) {
+            appendExec(QStringLiteral("—— 全部执行完毕 ————————————"));
+            setExecRunning(false);
+            return;
+        }
+        const QString cmd = m_pendingCmds.takeFirst();
+        m_curCmd = cmd;
+        // 用 splitCommand 做类 shell 分词（正确处理引号内的 JSON 补丁等）；
+        // 首个 token 固定是 "kubectl"，替换为探测到的真实 kubectl 路径执行
+        const QStringList parts = QProcess::splitCommand(cmd);
+        if (parts.size() < 2 || !parts.first().startsWith(QLatin1String("kubectl"))) {
+            appendExec(QStringLiteral("—— 跳过无法解析的命令：") + cmd);
+            startNextCmd();
+            return;
+        }
+        const QStringList args = parts.mid(1);
+        appendExec(QStringLiteral("▶ ") + cmd);
+        setExecRunning(true);
+        auto* p = new QProcess(this);
+        m_execProc = p;
+        p->setProcessChannelMode(QProcess::MergedChannels);   // kubectl 大量输出走 stderr，合并展示
+        connect(p, &QProcess::readyRead, p, [this, p] {
+            const QByteArray chunk = p->readAll();
+            appendExec(QString::fromUtf8(chunk).remove(QLatin1Char('\r')));
+        });
+        connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+                [this, p](int code) {
+            p->deleteLater();
+            if (m_execProc == p) m_execProc = nullptr;
+            if (code == 0) {
+                appendExec(QStringLiteral("✓ 退出码 0"));
+            } else {
+                appendExec(QStringLiteral("✗ 退出码 %1（已停止后续命令）").arg(code));
+                m_pendingCmds.clear();
+                appendExec(QStringLiteral("—— 执行中止 ————————————"));
+                setExecRunning(false);
+                return;
+            }
+            startNextCmd();   // 成功才继续下一条
+        });
+        p->start(kubectlPath(), args);
+    }
+    void stopExec() {
+        if (!m_execRunning) return;
+        m_pendingCmds.clear();
+        if (m_execProc && m_execProc->state() != QProcess::NotRunning) {
+            appendExec(QStringLiteral("⏹ 已手动停止（kill -TERM）"));
+            m_execProc->kill();   // 已断流程由 finished 回调收尾（execRunning 复位）
+        } else {
+            appendExec(QStringLiteral("—— 执行中止 ————————————"));
+            setExecRunning(false);
+        }
+    }
+
     // 切换集群时把命名空间带成该 context 的默认值
     void applyCtxNamespace() {
         if (!m_ctx) return;
@@ -1601,6 +1756,14 @@ private:
     QWidget* m_formHost = nullptr;
     QPlainTextEdit* m_out = nullptr;
     QPushButton* m_copyBtn = nullptr;
+    QPlainTextEdit* m_execOut = nullptr;      // 执行输出控制台
+    QPushButton* m_execBtn = nullptr;         // 执行（危险命令标红+二次确认）
+    QPushButton* m_stopBtn = nullptr;         // 停止（logs -f 等长命令）
+    QPushButton* m_clearBtn = nullptr;        // 清空输出
+    bool m_execRunning = false;
+    QProcess* m_execProc = nullptr;           // 当前执行中的进程（页面析构时统一收尾）
+    QStringList m_pendingCmds;                // 待执行的剩余命令
+    QString m_curCmd;
     QString m_lastCmd;
     QHash<QString, QWidget*> m_widgets;
     struct ResPickInfo { QComboBox* combo; QPushButton* btn; FieldDef f; QLabel* hint = nullptr; };
