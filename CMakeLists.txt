@@ -140,4 +140,19 @@ if(BUILD_SMOKE)
   if(APPLE)
     target_link_libraries(lingwtools-smoke PRIVATE "-framework Security" "-framework CoreFoundation")
   endif()
+
+  add_executable(lingwtools-smoke-all scripts/smoke_all.cpp ${APP_SOURCES} theme.qrc)
+  target_include_directories(lingwtools-smoke-all PRIVATE src 3rdparty/mbedtls/include)
+  target_compile_definitions(lingwtools-smoke-all PRIVATE APP_VERSION="${PROJECT_VERSION}")
+  target_link_libraries(lingwtools-smoke-all PRIVATE
+    Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent
+    yaml-cpp qrencode_core
+    mbedtls mbedx509 mbedcrypto
+  )
+  if(WIN32)
+    target_link_libraries(lingwtools-smoke-all PRIVATE iphlpapi ws2_32 bcrypt)
+  endif()
+  if(APPLE)
+    target_link_libraries(lingwtools-smoke-all PRIVATE "-framework Security" "-framework CoreFoundation")
+  endif()
 endif()

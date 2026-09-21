@@ -20,7 +20,12 @@ jobs:
           -DBUILD_SMOKE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Build smoke binary
-        run: cmake --build build --target lingwtools-smoke
+        run: cmake --build build --target lingwtools-smoke lingwtools-smoke-all
+
+      - name: Run smoke-all (全部工具页+全部按钮点击)
+        continue-on-error: true
+        run: |
+          lldb --batch -o "run" -k "bt 12" -- ./build/lingwtools-smoke-all 2>&1 | tee smokeall.log || true
 
       - name: Run smoke (K8s 命令生成器)
         continue-on-error: true
@@ -50,6 +55,7 @@ jobs:
         with:
           name: smoke-logs
           path: |
+            smokeall.log
             smoke0.log
             smoke1.log
           if-no-files-found: ignore
