@@ -1,3 +1,3 @@
-0efacdde3b09289ad567c5b724bf76d7018e507d3646ec399391887712ac5e33  lingwtools-setup-1.0.1.exe
-688054960dc7b5fbcd4bc380d21928b390dfc6a9f37f36e7e3ca151a3db9a929  lingwtools-windows-x64-portable.zip
-9fd38fe64b9a0b45c2fba3cde520c662e0015be83a8c9e5cb806e2c74b73d3fe  lingwtools-macos-arm64.dmg
+3011103bce581d4ef3914e7aeb77073deed9eea437f2bb748e445e8f11aebf55  lingwtools-setup-1.0.1.exe
+2992b303c1a06708dbcdf8bbf53994571f4b4a52806f5cf2853c09a63ce98df4  lingwtools-windows-x64-portable.zip
+e649a1dc991e50c302279f995ee7e0853091dc4e65a874e9b2efa3b615470ab7  lingwtools-macos-arm64.dmg
