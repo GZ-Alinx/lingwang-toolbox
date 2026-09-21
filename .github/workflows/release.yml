@@ -104,8 +104,10 @@ jobs:
           cp -R build/lingwtools.app dmgstage/
           ln -s /Applications dmgstage/Applications
           hdiutil create -volname "灵王工具箱" -srcfolder dmgstage -ov -format UDZO \
-            lingwtools-macos-arm64.dmg || \n              { hdiutil detach "/Volumes/灵王工具箱" || true; sleep 5;
-                hdiutil create -volname "灵王工具箱" -srcfolder dmgstage -ov -format UDZO \n                  lingwtools-macos-arm64.dmg; }
+            lingwtools-macos-arm64.dmg || \
+            { hdiutil detach "/Volumes/灵王工具箱" || true; sleep 5; \
+              hdiutil create -volname "灵王工具箱" -srcfolder dmgstage -ov -format UDZO \
+                lingwtools-macos-arm64.dmg; }
 
       - uses: actions/upload-artifact@v4
         with:
