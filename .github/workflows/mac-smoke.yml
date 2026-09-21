@@ -22,6 +22,22 @@ jobs:
       - name: Build smoke binary
         run: cmake --build build --target lingwtools-smoke lingwtools-smoke-all
 
+      - name: Install kubectl + fake kubeconfig（真实探测/失败路径验证）
+        run: |
+          brew install kubectl
+          which_k=$(command -v kubectl); echo "kubectl at: $which_k"
+          mkdir -p ~/.kube
+          cat > ~/.kube/config <<'EOF'
+          apiVersion: v1
+          kind: Config
+          contexts:
+          - name: fake-ci-context
+            context:
+              cluster: fake-cluster
+              user: fake-user
+          current-context: fake-ci-context
+          EOF
+
       - name: Run smoke-all (全部工具页+全部按钮点击)
         continue-on-error: true
         run: |

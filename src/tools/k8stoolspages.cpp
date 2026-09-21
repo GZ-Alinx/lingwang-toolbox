@@ -22,6 +22,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QDir>
+#include <QFileInfo>
 #include <QFile>
 #include <QCoreApplication>
 #include <QRegularExpression>
@@ -29,6 +30,7 @@
 #include <QVBoxLayout>
 #include <QHash>
 #include <functional>
+#include <memory>
 
 namespace {
 
@@ -956,20 +958,30 @@ private slots:
         if (!m_kubectlPathResolved) {
             m_kubectlPathResolved = true;
             const QString appDir = QCoreApplication::applicationDirPath();
-#ifdef Q_OS_WIN
-            const QString local = appDir + QStringLiteral("/kubectl.exe");
-            m_kubectlPath = QFile::exists(local) ? local : QStringLiteral("kubectl");
-#else
-            const QStringList candidates = {
+            QStringList candidates = {
                 appDir + QStringLiteral("/kubectl"),                 // 工具箱一键安装位置
                 QStringLiteral("/opt/homebrew/bin/kubectl"),          // Apple Silicon Homebrew
                 QStringLiteral("/usr/local/bin/kubectl"),             // Intel Homebrew / 手动 / Docker Desktop
                 QStringLiteral("/usr/bin/kubectl"),
+                QStringLiteral("/opt/local/bin/kubectl"),             // MacPorts
             };
+#ifdef Q_OS_MAC
+            // GUI 应用不继承 shell PATH；用登录 shell 解析一次真实位置（覆盖 brew/asdf/krew/nvm 等）
+            {
+                QProcess sh;
+                sh.start(QStringLiteral("/bin/zsh"),
+                         {QStringLiteral("-lc"), QStringLiteral("command -v kubectl || command -v kubectl.exe")});
+                if (sh.waitForFinished(2500) && sh.exitCode() == 0) {
+                    const QString found = QString::fromUtf8(sh.readAllStandardOutput()).trimmed();
+                    if (!found.isEmpty() && !found.contains(QLatin1Char('
+')))
+                        candidates.prepend(found);
+                }
+            }
+#endif
             m_kubectlPath = QStringLiteral("kubectl");   // 兜底：PATH
             for (const QString& c : candidates)
-                if (QFile::exists(c)) { m_kubectlPath = c; break; }
-#endif
+                if (QFileInfo(c).isExecutable()) { m_kubectlPath = c; break; }
         }
         return m_kubectlPath;
     }
@@ -996,8 +1008,10 @@ private slots:
                                         : QStringLiteral("color:#F85149;"));
         m_kubectlLbl->setToolTip(m_kubectlOk
                                      ? QStringLiteral("使用：%1").arg(kubectlPath())
-                                     : QStringLiteral("未找到 kubectl；可点右侧按钮一键安装，"
-                                                      "或 brew install kubectl 后重启工具箱"));
+                                     : QStringLiteral("未找到可执行的 kubectl（已尝试程序目录、"
+                                                      "/opt/homebrew/bin、/usr/local/bin、登录 shell PATH）。\n"
+                                                      "可点右侧按钮一键安装；若已安装仍提示未找到，"
+                                                      "在终端执行: sudo xattr -rd com.apple.quarantine $(command -v kubectl)"));
         m_installBtn->setVisible(!m_kubectlOk);
     }
     // 一键下载安装 kubectl（dl.k8s.io 稳定版，放入程序目录）
@@ -1135,15 +1149,15 @@ private slots:
         if (!ctx.isEmpty() && !ctx.startsWith(QLatin1Char('(')))
             args << QStringLiteral("--context") << ctx;
         auto* p = new QProcess(this);
-        auto* outBuf = new QByteArray;
-        auto* errBuf = new QByteArray;
+        // 缓冲用共享指针：finished 回调（含多个提前 return）结束后自动释放，
+        // 修复此前“先 delete 再兜底读取”的悬空指针（macOS 上足以导致闪退/丢数据）
+        auto outBuf = std::make_shared<QByteArray>();
+        auto errBuf = std::make_shared<QByteArray>();
         connect(p, &QProcess::readyReadStandardOutput, p, [p, outBuf] { *outBuf += p->readAllStandardOutput(); });
         connect(p, &QProcess::readyReadStandardError, p, [p, errBuf] { *errBuf += p->readAllStandardError(); });
         connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
                 [this, p, outBuf, errBuf](int code) {
             p->deleteLater();
-            delete outBuf;
-            delete errBuf;
             m_fetchNsBtn->setEnabled(true);
             *outBuf += p->readAllStandardOutput();   // 兜底再收一次
             *errBuf += p->readAllStandardError();
@@ -1230,15 +1244,15 @@ private slots:
         btn->setToolTip(QStringLiteral("正在拉取 %1 …").arg(res));
         const bool rawRef = f.raw;   // moc 对初始化捕获敏感，先取局部值
         auto* p = new QProcess(this);
-        auto* outBuf = new QByteArray;
-        auto* errBuf = new QByteArray;
+        // 缓冲用共享指针：finished 回调（含多个提前 return）结束后自动释放，
+        // 修复此前“先 delete 再兜底读取”的悬空指针（macOS 上足以导致闪退/丢数据）
+        auto outBuf = std::make_shared<QByteArray>();
+        auto errBuf = std::make_shared<QByteArray>();
         connect(p, &QProcess::readyReadStandardOutput, p, [p, outBuf] { *outBuf += p->readAllStandardOutput(); });
         connect(p, &QProcess::readyReadStandardError, p, [p, errBuf] { *errBuf += p->readAllStandardError(); });
         connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
                 [this, p, outBuf, errBuf, target, btn, rawRef, res](int code) {
             p->deleteLater();
-            delete outBuf;
-            delete errBuf;
             btn->setEnabled(true);
             *outBuf += p->readAllStandardOutput();
             *errBuf += p->readAllStandardError();
