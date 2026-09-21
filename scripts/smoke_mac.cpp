@@ -8,6 +8,7 @@
 #include <QTimer>
 #include <cstdio>
 #include "tools/pages.h"
+#include "widgets/toolpage.h"
 
 int main(int argc, char** argv) {
     std::printf("smoke: boot\n"); std::fflush(stdout);
