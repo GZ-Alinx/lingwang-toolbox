@@ -938,10 +938,34 @@ private slots:
             flashOutput();
         }
     }
+    // 解析 kubectl 可执行文件路径：
+    // macOS GUI 应用不继承 shell 的 PATH（launchd 环境无 /opt/homebrew/bin 等），
+    // 必须显式探测常见安装位置；Windows 走系统 PATH 即可。
+    QString kubectlPath() {
+        if (!m_kubectlPathResolved) {
+            m_kubectlPathResolved = true;
+            const QString appDir = QCoreApplication::applicationDirPath();
+#ifdef Q_OS_WIN
+            const QString local = appDir + QStringLiteral("/kubectl.exe");
+            m_kubectlPath = QFile::exists(local) ? local : QStringLiteral("kubectl");
+#else
+            const QStringList candidates = {
+                appDir + QStringLiteral("/kubectl"),                 // 工具箱一键安装位置
+                QStringLiteral("/opt/homebrew/bin/kubectl"),          // Apple Silicon Homebrew
+                QStringLiteral("/usr/local/bin/kubectl"),             // Intel Homebrew / 手动 / Docker Desktop
+                QStringLiteral("/usr/bin/kubectl"),
+            };
+            m_kubectlPath = QStringLiteral("kubectl");   // 兜底：PATH
+            for (const QString& c : candidates)
+                if (QFile::exists(c)) { m_kubectlPath = c; break; }
+#endif
+        }
+        return m_kubectlPath;
+    }
     // 检测本机 kubectl（执行能力的前提）
     void detectKubectl() {
         QProcess p;
-        p.start(QStringLiteral("kubectl"), {QStringLiteral("version"), QStringLiteral("--client=true")});
+        p.start(kubectlPath(), {QStringLiteral("version"), QStringLiteral("--client=true")});
         QString ver;
         if (p.waitForFinished(3000) && p.exitCode() == 0) {
             const QString out = QString::fromUtf8(p.readAllStandardOutput());
@@ -959,6 +983,10 @@ private slots:
         m_kubectlLbl->setStyleSheet(m_kubectlOk
                                         ? QStringLiteral("color:#3FB950;")
                                         : QStringLiteral("color:#F85149;"));
+        m_kubectlLbl->setToolTip(m_kubectlOk
+                                     ? QStringLiteral("使用：%1").arg(kubectlPath())
+                                     : QStringLiteral("未找到 kubectl；可点右侧按钮一键安装，"
+                                                      "或 brew install kubectl 后重启工具箱"));
         m_installBtn->setVisible(!m_kubectlOk);
     }
     // 一键下载安装 kubectl（dl.k8s.io 稳定版，放入程序目录）
@@ -1013,9 +1041,16 @@ private slots:
                     return;
                 }
                 f.close();
+#ifndef Q_OS_WIN
+                // macOS/Linux：下载的文件需要可执行权限
+                QFile::setPermissions(finalPath,
+                    QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner |
+                    QFileDevice::ReadGroup | QFileDevice::ExeGroup |
+                    QFileDevice::ReadOther | QFileDevice::ExeOther);
+#endif
                 m_installBtn->setText(QStringLiteral("已下载 %1").arg(ver));
                 m_installBtn->setEnabled(false);
-                m_out->appendPlainText(QStringLiteral("\n# kubectl 已安装到程序目录；若执行报找不到命令，请重启工具箱"));
+                m_kubectlPathResolved = false;   // 重新探测（程序目录优先命中）
                 detectKubectl();
             });
         });
@@ -1130,7 +1165,7 @@ private slots:
                 flashBtn(m_fetchNsBtn, false, QStringLiteral("集群中没有命名空间？"));
             }
         });
-        p->start(QStringLiteral("kubectl"), args);
+        p->start(kubectlPath(), args);
     }
 
     // 集群/命名空间变化后，已拉取的资源名称列表作废（清列表、保留手动输入）
@@ -1216,7 +1251,7 @@ private slots:
                 flashBtn(btn, false, QStringLiteral("当前命名空间没有 %1（可换命名空间或手动输入）").arg(res));
             }
         });
-        p->start(QStringLiteral("kubectl"), args);
+        p->start(kubectlPath(), args);
     }
 
     // 切换集群时把命名空间带成该 context 的默认值
@@ -1313,7 +1348,9 @@ private:
     QPushButton* m_copyBtn = nullptr;
     QString m_lastCmd;
     QHash<QString, QWidget*> m_widgets;
-    QList<QComboBox*> m_resPickers;   // 当前表单中的资源名称可编辑下拉（集群/命名空间变化时失效）
+    QList<QComboBox*> m_resPickers;
+    QString m_kubectlPath;
+    bool m_kubectlPathResolved = false;   // 当前表单中的资源名称可编辑下拉（集群/命名空间变化时失效）
 };
 
 // ---------------- K8s YAML 模板页面 ----------------

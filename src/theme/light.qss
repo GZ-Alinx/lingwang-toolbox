@@ -14,7 +14,7 @@ QLabel#logoText {
     font-weight: 700;
     color: #1F2328;
 }
-QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox {
     background: #FFFFFF;
     border: 1px solid #D7DDE5;
     border-radius: 6px;
@@ -22,6 +22,15 @@ QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
     color: #24292F;
     selection-background-color: #B7D0FF;
     selection-color: #1F2328;
+}
+QComboBox {
+    background: #FFFFFF;
+    border: 1px solid #D7DDE5;
+    border-radius: 6px;
+    color: #24292F;
+    selection-background-color: #B7D0FF;
+    selection-color: #1F2328;
+    padding: 6px 30px 6px 8px;   /* 右侧给下拉箭头让位，避免文字截断 */
 }
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {
     border-color: #2563EB;
@@ -37,6 +46,7 @@ QPlainTextEdit[objectName="mono"], QTextEdit[objectName="mono"] {
 QComboBox::drop-down { border: none; width: 22px; }
 QComboBox::down-arrow { image: url(:/theme/caret-down-light.svg); width: 10px; height: 10px; }
 QComboBox QAbstractItemView {
+    padding: 4px 2px;
     background: #FFFFFF;
     border: 1px solid #D7DDE5;
     selection-background-color: #E3EDFF;
@@ -193,3 +203,5 @@ QMessageBox { background: #FFFFFF; }
 QMenu { background: #FFFFFF; border: 1px solid #D0D7E2; }
 QMenu::item { padding: 6px 24px; }
 QMenu::item:selected { background: #E3EDFF; }
+
+QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
