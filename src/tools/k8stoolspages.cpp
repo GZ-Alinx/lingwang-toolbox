@@ -789,19 +789,20 @@ protected:
 
 public:
     K8sCmdPage() {
-        ToolPage::setMeta(QStringLiteral("box"), QStringLiteral("K8s 命令生成器"),
-                          QStringLiteral("kubectl 可视化生成：查看 / 日志 / 事件 / 调试 / 发布 / RBAC / 集群"));
+        // 不调 ToolPage::setMeta：省去 42px 大页头（页面已有「场景与集群」卡片标题与描述行），
+        // 参数/命令/执行结果三卡在默认窗口下一屏放下、不出滚动条
         // 整页内容放入垂直滚动区：窗口缩小后可上下滚动填写参数/查看输出
         auto* pageHost = new QWidget;
         auto* pageLay = new QVBoxLayout(pageHost);
-        pageLay->setContentsMargins(0, 0, 6, 0);
-        pageLay->setSpacing(12);
+        pageLay->setContentsMargins(0, 0, 4, 0);
+        pageLay->setSpacing(6);
 
         auto* top = new QWidget;
         auto* topLay = new QVBoxLayout(top);
         topLay->setContentsMargins(0, 0, 0, 0);
-        topLay->setSpacing(8);
+        topLay->setSpacing(6);
 
+        // 单行排布「场景 / 集群 / 命名空间」：宽屏下一行更紧凑，整页高度省一行，减少滚动
         auto* row1 = new QWidget;
         auto* r1 = new QHBoxLayout(row1);
         r1->setContentsMargins(0, 0, 0, 0);
@@ -809,12 +810,8 @@ public:
         m_scenario = new QComboBox;
         for (const ScenarioDef& sc : scenarios()) m_scenario->addItem(sc.name);
         r1->addWidget(new QLabel(QStringLiteral("场景:")));
-        r1->addWidget(m_scenario, 1);
+        r1->addWidget(m_scenario, 10);
 
-        auto* row2 = new QWidget;
-        auto* r2 = new QHBoxLayout(row2);
-        r2->setContentsMargins(0, 0, 0, 0);
-        r2->setSpacing(8);
         m_ctx = new QComboBox;                       // 集群上下文（kubeconfig）
         m_ctx->setObjectName(QStringLiteral("k8sCtx"));
         m_ctx->setToolTip(QStringLiteral("kubeconfig 中的 context（支持 $KUBECONFIG 多文件与 ~/.kube/config 自动合并）。"
@@ -826,24 +823,23 @@ public:
         m_ns->setToolTip(QStringLiteral("命名空间；留空（或选第一行空项）则命令不带 -n，"
                                         "使用当前上下文的默认命名空间。刷新按钮可拉取真实列表"));
         m_kubectlLbl = new QLabel;
-        r2->addWidget(new QLabel(QStringLiteral("集群:")));
-        r2->addWidget(m_ctx, 1);
-        r2->addWidget(new QLabel(QStringLiteral("命名空间:")));
-        r2->addWidget(m_ns, 1);
+        r1->addWidget(new QLabel(QStringLiteral("集群:")));
+        r1->addWidget(m_ctx, 8);
+        r1->addWidget(new QLabel(QStringLiteral("命名空间:")));
+        r1->addWidget(m_ns, 6);
         m_fetchNsBtn = ui::button(QString());
         m_fetchNsBtn->setIcon(QIcon(QStringLiteral(":/theme/refresh.svg")));
         m_fetchNsBtn->setIconSize(QSize(14, 14));
         m_fetchNsBtn->setFixedSize(36, 34);
         m_fetchNsBtn->setToolTip(QStringLiteral("从当前集群拉取真实命名空间列表（需本机 kubectl；也可直接输入）"));
         connect(m_fetchNsBtn, &QPushButton::clicked, this, [this] { fetchNamespaces(); });
-        r2->addWidget(m_fetchNsBtn);
+        r1->addWidget(m_fetchNsBtn);
 
-        r2->addWidget(m_kubectlLbl);
+        r1->addWidget(m_kubectlLbl);
         m_installBtn = ui::button(QStringLiteral("一键安装 kubectl"));
         connect(m_installBtn, &QPushButton::clicked, this, [this] { installKubectl(); });
-        r2->addWidget(m_installBtn);
+        r1->addWidget(m_installBtn);
         topLay->addWidget(row1);
-        topLay->addWidget(row2);
         // 集群连接状态常显：成功绿、失败红（失败原因直接可见，不藏悬停）
         m_diag = new QLabel;
         m_diag->setObjectName(QStringLiteral("k8sDiag"));
@@ -894,18 +890,17 @@ public:
         m_form = new QFormLayout(m_formHost);
         m_form->setLabelAlignment(Qt::AlignRight);
         m_form->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
-        m_form->setSpacing(8);
-        auto* formScroll = new QScrollArea;
-        formScroll->setWidgetResizable(true);
-        formScroll->setFrameShape(QFrame::NoFrame);
-        formScroll->setWidget(m_formHost);
-        formScroll->setMinimumHeight(160);
-        pageLay->addWidget(ui::card(QStringLiteral("参数"), formScroll, nullptr, true), 1);
+        m_form->setSpacing(7);
+        // 表单不套内层滚动区：按字段数自适应高度，杜绝双层滚动条；
+        // 窗口被压得很小时由外层整页滚动兜底
+        pageLay->addWidget(ui::card(QStringLiteral("参数"), m_formHost, nullptr, true));
 
         m_out = new QPlainTextEdit;
         m_out->setObjectName(QStringLiteral("mono"));
         m_out->setReadOnly(true);
-        m_out->setMinimumHeight(100);
+        m_out->setMinimumHeight(88);          // ≈3 条命令，短命令场景不出滚动条
+        m_out->setLineWrapMode(QPlainTextEdit::WidgetWidth);            // 长命令换行，不出横向条
+        m_out->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         m_out->setPlaceholderText(QStringLiteral("命令将实时生成…"));
         new ShellHighlighter(m_out->document());   // kubectl 命令着色
         m_copyBtn = ui::button(QStringLiteral("复制全部"), "primary");
@@ -916,13 +911,18 @@ public:
         });
         pageLay->addWidget(ui::card(QStringLiteral("命令 · 参数变化实时更新（复制到终端执行）"), m_out, m_copyBtn));
 
-        m_out->setMinimumHeight(140);
+        m_out->setMinimumHeight(88);
+        m_out->setMaximumHeight(120);         // 命令区给固定档位：多出的空间让给参数与执行结果
 
         // ---- 执行结果控制台：直接在本机运行上方命令，输出实时着色显示 ----
         m_execOut = new QPlainTextEdit;
         m_execOut->setObjectName(QStringLiteral("mono"));
         m_execOut->setReadOnly(true);
+        m_execOut->setMinimumHeight(80);
+        m_execOut->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);   // 吃剩余空间：整页在默认窗口下不出滚动条
         m_execOut->setMaximumBlockCount(5000);   // 防超长输出（如 logs -f）撑爆内存
+        m_execOut->setLineWrapMode(QPlainTextEdit::WidgetWidth);       // 输出换行展示，不出横向条
+        m_execOut->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         m_execOut->setPlaceholderText(QStringLiteral("点「执行」在本机运行上方命令，输出实时显示；delete/drain 类操作需二次确认"));
         new LogHighlighter(m_execOut->document());
         m_execBtn = ui::button(QStringLiteral("▶ 执行"), "primary");
@@ -952,6 +952,7 @@ public:
         auto* pageScroll = new QScrollArea;
         pageScroll->setWidgetResizable(true);
         pageScroll->setFrameShape(QFrame::NoFrame);
+        pageScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);   // 页面内容随窗口伸缩，不横向滚
         pageScroll->setWidget(pageHost);
         body()->addWidget(pageScroll, 1);
 

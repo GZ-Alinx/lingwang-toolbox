@@ -11,6 +11,8 @@
 #include <QPushButton>
 #include <QPlainTextEdit>
 #include <QEventLoop>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTimer>
 #include <cstdio>
 #include <cstdlib>
@@ -36,6 +38,7 @@ int main(int argc, char** argv) {
     const int tSwitch = fast ? (qstrcmp(argv[2], "fast") == 0 ? 500 : atoi(argv[2])) : 4000;
     // HOST=1：复现 smoke_all 的宿主窗口 + setParent 托管方式
     QWidget* page = pages::createK8sCmd();
+    page->resize(1260, 780);   // 模拟主窗口内容区尺寸，验证默认视图不出滚动条
     if (!qEnvironmentVariable("HOST").isEmpty()) {
         auto* host = new QWidget;
         host->resize(1280, 900);
@@ -123,6 +126,29 @@ int main(int argc, char** argv) {
             }
         } else {
             std::printf("[exec] skip (button not found/disabled)\n");
+        }
+        // ---- 排版检查：默认窗口尺寸下各滚动区/文本框的滚动条可见性（目标：整页与命令区不可见）----
+        {
+            const auto areas = page->findChildren<QScrollArea*>();
+            for (QScrollArea* a : areas)
+                std::printf("[layout] scrollarea vbar=%d hbar=%d\n",
+                            a->verticalScrollBar() && a->verticalScrollBar()->isVisible() ? 1 : 0,
+                            a->horizontalScrollBar() && a->horizontalScrollBar()->isVisible() ? 1 : 0);
+            const auto edits = page->findChildren<QPlainTextEdit*>();
+            for (int i = 0; i < edits.size(); ++i)
+                std::printf("[layout] edit#%d vbar=%d hbar=%d size=%dx%d\n", i,
+                            edits[i]->verticalScrollBar()->isVisible() ? 1 : 0,
+                            edits[i]->horizontalScrollBar()->isVisible() ? 1 : 0,
+                            edits[i]->width(), edits[i]->height());
+            const auto frames = page->findChildren<QFrame*>(QStringLiteral("card"));
+            int total = 0;
+            for (QFrame* f : frames) {
+                auto* t = f->findChild<QLabel*>(QStringLiteral("cardTitle"));
+                std::printf("[layout] card h=%d (%s)\n", f->height(),
+                            qPrintable(t ? t->text().left(16) : QStringLiteral("?")));
+                total += f->height();
+            }
+            std::printf("[layout] cards total=%d\n", total);
         }
         std::printf("K8S SMOKE DONE\n");
         std::fflush(stdout);
