@@ -84,6 +84,28 @@ static bool isDangerousCmd(const QString& cmd) {
     return c.startsWith(QLatin1String("kubectl delete")) || c.startsWith(QLatin1String("kubectl drain"));
 }
 
+// kubectl 常见报错 → 中文友好提示（无匹配时返回原文前 120 字符）
+static QString friendlyK8sError(const QString& raw) {
+    const QString e = raw.toLower();
+    if (e.contains(QLatin1String("no configuration has been provided"))
+        || e.contains(QLatin1String("stat $home/.kube/config")))
+        return QStringLiteral("集群上下文连接失败：本机没有可用的 kubeconfig（$KUBECONFIG / ~/.kube/config）");
+    if (e.contains(QLatin1String("current-context is not set")))
+        return QStringLiteral("集群上下文连接失败：kubeconfig 未设置 current-context，请在上方「集群」选择");
+    if (e.contains(QLatin1String("does not exist")) && e.contains(QLatin1String("context")))
+        return QStringLiteral("集群上下文连接失败：所选 context 不存在（kubeconfig 已变更），请重新选择集群");
+    if (e.contains(QLatin1String("connection refused")) || e.contains(QLatin1String("no such host"))
+        || e.contains(QLatin1String("i/o timeout")) || e.contains(QLatin1String("context deadline exceeded"))
+        || e.contains(QLatin1String("network is unreachable")) || e.contains(QLatin1String("tls handshake timeout")))
+        return QStringLiteral("集群不可达：集群 API 地址连不通（检查 VPN/网络或集群是否在线）");
+    if (e.contains(QLatin1String("you must be logged in")) || e.contains(QLatin1String("unauthorized"))
+        || e.contains(QLatin1String("401")) || e.contains(QLatin1String("provide credentials")))
+        return QStringLiteral("认证失败：凭证缺失或已过期，请重新登录获取集群凭证");
+    if (e.contains(QLatin1String("forbidden")) || e.contains(QLatin1String("403")))
+        return QStringLiteral("权限不足：当前身份无权执行该操作");
+    return raw.left(120);
+}
+
 static FieldDef combo(const char* key, const char* label, const QStringList& choices, const QString& def) {
     FieldDef f;
     f.ty = FieldDef::Combo; f.key = QLatin1String(key); f.label = QString::fromUtf8(label);
@@ -1270,6 +1292,7 @@ private slots:
                 }
             } catch (...) {}
         }
+        m_kubeconfigOk = loaded;
         if (!loaded) {
             m_ctx->addItem(QStringLiteral("（未找到 ~/.kube/config，可手填参数）"), QString());
         } else {
@@ -1314,6 +1337,15 @@ private slots:
             flashBtn(m_fetchNsBtn, false, QStringLiteral("未检测到 kubectl，无法拉取；可直接手动输入命名空间"));
             return;
         }
+        if (!m_kubeconfigOk) {
+            // 明确告知根因与出路，而不是把 kubectl 的英文报错甩给用户
+            const QString msg = QStringLiteral("集群上下文连接失败：本机没有可用的 kubeconfig"
+                                               "（已尝试 $KUBECONFIG 与 ~/.kube/config）。"
+                                               "请将集群凭证复制到 ~/.kube/config 后回到本页自动重读");
+            flashBtn(m_fetchNsBtn, false, msg);
+            setDiag(QStringLiteral("✗ ") + msg, false);
+            return;
+        }
         // 代际防竞态：切 context 后旧请求可能比新请求更晚返回，若不拦截会用
         // 旧集群的命名空间/状态覆盖新集群的正确结果（latest-wins）
         const quint64 gen = ++m_nsGen;
@@ -1355,7 +1387,7 @@ private slots:
             if (code != 0 || raw.trimmed().isEmpty()) {
                 const QString err = errBuf->trimmed().isEmpty()
                                         ? QStringLiteral("kubectl 无输出（退出码 %1）").arg(code)
-                                        : QString::fromUtf8(*errBuf).trimmed().left(160);
+                                        : friendlyK8sError(QString::fromUtf8(*errBuf).trimmed());
                 flashBtn(m_fetchNsBtn, false, err);
                 setDiag(QStringLiteral("✗ 命名空间拉取失败：%1").arg(err), false);
                 return;
@@ -1431,6 +1463,11 @@ private slots:
             setResHint(hint, QStringLiteral("未检测到 kubectl"), true);
             return;
         }
+        if (!m_kubeconfigOk) {
+            flashBtn(btn, false, QStringLiteral("本机没有可用的 kubeconfig"));
+            setResHint(hint, QStringLiteral("集群上下文连接失败，无法拉取"), true);
+            return;
+        }
         // 解析资源类型：固定类型 > 表单字段动态值（如“资源类型”下拉）
         QString res = f.res;
         if (res.isEmpty()) {
@@ -1492,7 +1529,7 @@ private slots:
                                      : err);
                 setResHint(hint, err.isEmpty()
                                      ? QStringLiteral("kubectl 失败（退出码 %1）").arg(code)
-                                     : err, true);
+                                     : friendlyK8sError(err), true);
                 return;
             }
             // -o name 行格式：<resource>/<name>（可能带 api 组，如 deployment.apps/name）
@@ -1776,6 +1813,7 @@ private:
     bool m_shownOnce = false;
     QLabel* m_diag = nullptr;
     QString m_kubectlVer;   // 当前表单中的资源名称可编辑下拉（集群/命名空间变化时失效）
+    bool m_kubeconfigOk = false;   // 本机是否存在可用的 kubeconfig 上下文
     quint64 m_nsGen = 0;    // 命名空间拉取代际：新拉取作废旧请求（防旧集群结果晚归覆盖新集群）
     quint64 m_resGen = 0;   // 资源名称拉取代际：集群/ns/场景/资源类型变化时递增，过期回调直接丢弃
 };
