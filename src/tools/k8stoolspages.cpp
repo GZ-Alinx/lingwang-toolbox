@@ -123,6 +123,9 @@ static QString friendlyK8sError(const QString& raw) {
         return QStringLiteral("集群上下文连接失败：kubeconfig 未设置 current-context，请在上方「集群」选择");
     if (e.contains(QLatin1String("does not exist")) && e.contains(QLatin1String("context")))
         return QStringLiteral("集群上下文连接失败：所选 context 不存在（kubeconfig 已变更），请重新选择集群");
+    // 凭证插件失败（EKS/GKE 等云集群常见）：比下面的泛化包装句式更具体，需先判
+    if (e.contains(QLatin1String("getting credentials")) || e.contains(QLatin1String("exec plugin")))
+        return QStringLiteral("集群凭证获取失败：凭证插件命令（如 aws cli）不可用或凭证无效，请安装并登录对应云 CLI");
     // kubectl 连不上 API Server 的通用包装句式（真实原因在其内部，但处置一致）
     if (e.contains(QLatin1String("couldn't get current server api group list"))
         || e.contains(QLatin1String("to connect to server")))
@@ -1117,6 +1120,16 @@ private slots:
     // 解析 kubectl 可执行文件路径：
     // macOS GUI 应用不继承 shell 的 PATH（launchd 环境无 /opt/homebrew/bin 等），
     // 必须显式探测常见安装位置；Windows 走系统 PATH 即可。
+    // kubectl 子进程环境：注入登录 shell PATH（macOS），使 exec 凭证插件能找到 aws/gcloud 等
+    QProcessEnvironment kubectlEnv() const {
+        auto env = QProcessEnvironment::systemEnvironment();
+#ifdef Q_OS_MAC
+        if (!m_shellPath.isEmpty())
+            env.insert(QStringLiteral("PATH"), m_shellPath);
+#endif
+        return env;
+    }
+
     QString kubectlPath() {
         if (!m_kubectlPathResolved) {
             m_kubectlPathResolved = true;
@@ -1141,8 +1154,14 @@ private slots:
                        << qEnvironmentVariable("HOME") + QStringLiteral("/.krew/bin/kubectl");  // krew
 #endif
 #ifdef Q_OS_MAC
-            // GUI 应用不继承 shell PATH；用登录 shell 解析一次真实位置（覆盖 brew/asdf/krew/nvm 等）
+            // GUI 应用不继承 shell PATH；用登录 shell 解析一次真实位置（覆盖 brew/asdf/krew/nvm 等），
+            // 同时捕获完整 PATH 供凭证插件子进程使用
             {
+                QProcess shp;
+                shp.start(QStringLiteral("/bin/zsh"),
+                          {QStringLiteral("-lc"), QStringLiteral("printf %s \"$PATH\"")});
+                if (shp.waitForFinished(2500) && shp.exitCode() == 0)
+                    m_shellPath = QString::fromUtf8(shp.readAllStandardOutput()).trimmed();
                 QProcess sh;
                 sh.start(QStringLiteral("/bin/zsh"),
                          {QStringLiteral("-lc"), QStringLiteral("command -v kubectl || command -v kubectl.exe")});
@@ -1165,6 +1184,7 @@ private slots:
     // 检测本机 kubectl（执行能力的前提）
     void detectKubectl() {
         QProcess p;
+        p.setProcessEnvironment(kubectlEnv());
         p.start(kubectlPath(), {QStringLiteral("version"), QStringLiteral("--client=true")});
         QString ver;
         if (p.waitForFinished(3000) && p.exitCode() == 0) {
@@ -1398,6 +1418,7 @@ private slots:
         if (!ctx.isEmpty())
             args << QStringLiteral("--context") << ctx;
         auto* p = new QProcess(this);
+        p->setProcessEnvironment(kubectlEnv());
         // 缓冲用共享指针：finished 回调（含多个提前 return）结束后自动释放，
         // 修复此前“先 delete 再兜底读取”的悬空指针（macOS 上足以导致闪退/丢数据）
         auto outBuf = std::make_shared<QByteArray>();
@@ -1536,6 +1557,7 @@ private slots:
         const QString defHint = f.hint;   // 默认占位文本（成功后还原用）
         const quint64 gen = m_resGen;   // 同一代内多个选择器并发拉取互不干扰；换代后全部作废
         auto* p = new QProcess(this);
+        p->setProcessEnvironment(kubectlEnv());
         // 缓冲用共享指针：finished 回调（含多个提前 return）结束后自动释放，
         // 修复此前“先 delete 再兜底读取”的悬空指针（macOS 上足以导致闪退/丢数据）
         auto outBuf = std::make_shared<QByteArray>();
@@ -1682,6 +1704,7 @@ private slots:
         setExecRunning(true);
         auto* p = new QProcess(this);
         m_execProc = p;
+        p->setProcessEnvironment(kubectlEnv());               // 凭证插件同样需要登录 shell PATH
         p->setProcessChannelMode(QProcess::MergedChannels);   // kubectl 大量输出走 stderr，合并展示
         connect(p, &QProcess::readyRead, p, [this, p] {
             const QByteArray chunk = p->readAll();
@@ -1852,6 +1875,8 @@ private:
     QLabel* m_diag = nullptr;
     QString m_kubectlVer;   // 当前表单中的资源名称可编辑下拉（集群/命名空间变化时失效）
     bool m_kubeconfigOk = false;   // 本机是否存在可用的 kubeconfig 上下文
+    QString m_shellPath;           // 登录 shell 的 PATH（仅 macOS）：注入 kubectl 子进程，
+                                   // 根治 exec 凭证插件（aws/gcloud/kubelogin）在 GUI 下找不到
     quint64 m_nsGen = 0;    // 命名空间拉取代际：新拉取作废旧请求（防旧集群结果晚归覆盖新集群）
     quint64 m_resGen = 0;   // 资源名称拉取代际：集群/ns/场景/资源类型变化时递增，过期回调直接丢弃
 };
