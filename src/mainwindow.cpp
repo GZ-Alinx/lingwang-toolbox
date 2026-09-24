@@ -66,7 +66,11 @@ MainWindow::MainWindow() {
     topLay->addSpacing(6);
 
     m_search = new QLineEdit;
+#ifdef Q_OS_MAC
+    m_search->setPlaceholderText(QStringLiteral("搜索工具（⌘K）"));
+#else
     m_search->setPlaceholderText(QStringLiteral("搜索工具（Ctrl+K）"));
+#endif
     m_search->setClearButtonEnabled(true);
     m_search->setFixedWidth(300);
     m_search->addAction(Icons::get(QStringLiteral("search"), QColor(0x9A, 0xA4, 0xB2)), QLineEdit::LeadingPosition);
@@ -111,6 +115,11 @@ MainWindow::MainWindow() {
         }
     });
     auto* sc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+K")), this);
+#ifdef Q_OS_MAC
+    // macOS 习惯：⌘K 同样聚焦搜索
+    auto* scMac = new QShortcut(QKeySequence(QStringLiteral("Meta+K")), this);
+    connect(scMac, &QShortcut::activated, this, [this] { m_search->setFocus(); m_search->selectAll(); });
+#endif
     connect(sc, &QShortcut::activated, this, [this] { m_search->setFocus(); m_search->selectAll(); });
     connect(m_themeBtn, &QToolButton::clicked, this, &MainWindow::toggleTheme);
     connect(aboutBtn, &QToolButton::clicked, this, &MainWindow::showAbout);
@@ -133,17 +142,17 @@ QWidget* MainWindow::makeSidebar() {
     lay->setSpacing(4);
 
     // 首页按钮
-    auto* homeBtn = new QPushButton(QStringLiteral("  首页"));
-    homeBtn->setObjectName(QStringLiteral("navBtn"));
-    homeBtn->setIcon(Icons::get(QStringLiteral("home"), QColor(0x9A, 0xA4, 0xB2)));
-    homeBtn->setCheckable(true);
-    homeBtn->setChecked(true);
-    homeBtn->setProperty("toolId", QString());
-    lay->addWidget(homeBtn);
-    connect(homeBtn, &QPushButton::clicked, this, [this, homeBtn] {
+    m_homeBtn = new QPushButton(QStringLiteral("  首页"));
+    m_homeBtn->setObjectName(QStringLiteral("navBtn"));
+    m_homeBtn->setIcon(Icons::get(QStringLiteral("home"), QColor(0x9A, 0xA4, 0xB2)));
+    m_homeBtn->setCheckable(true);
+    m_homeBtn->setChecked(true);
+    m_homeBtn->setProperty("toolId", QString());
+    lay->addWidget(m_homeBtn);
+    connect(m_homeBtn, &QPushButton::clicked, this, [this] {
         m_stack->setCurrentWidget(m_home);
         for (auto it = m_toolButtons.begin(); it != m_toolButtons.end(); ++it) it.value()->setChecked(false);
-        homeBtn->setChecked(true);
+        m_homeBtn->setChecked(true);
     });
 
     auto openHandler = [this](const QString& id, QPushButton* btn) {
@@ -314,6 +323,7 @@ void MainWindow::openTool(const QString& id) {
         tp->setHeaderAccent(ToolRegistry::categoryColor(meta->category));
     m_stack->setCurrentWidget(page);
     for (auto it = m_toolButtons.begin(); it != m_toolButtons.end(); ++it) it.value()->setChecked(false);
+    if (m_homeBtn) m_homeBtn->setChecked(false);   // 打开工具页时取消首页高亮（修双高亮）
     if (m_toolButtons.contains(id)) m_toolButtons.value(id)->setChecked(true);
     // 展开工具所在分类，便于看到当前位置
     if (CollapsibleSection* sec = m_sectionByCat.value(meta->category, nullptr))

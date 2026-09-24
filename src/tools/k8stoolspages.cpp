@@ -84,9 +84,38 @@ static bool isDangerousCmd(const QString& cmd) {
     return c.startsWith(QLatin1String("kubectl delete")) || c.startsWith(QLatin1String("kubectl drain"));
 }
 
-// kubectl 常见报错 → 中文友好提示（无匹配时返回原文前 120 字符）
+// 剥掉 kubectl 的 glog 日志头（E0924 11:07:11.483884 32926 memcache.go:265] ...），
+// 优先取末尾的 "error: ..." 致命行，其次提取 err=\"...\" 内核错误——
+// 不剥头的话 120 字符兜底截断全是时间戳，用户看到的就是一串天书
+static QString kubectlErrCore(const QString& raw) {
+    static const QRegularExpression glogHead(
+        QStringLiteral("^[EIWF]\\d{4} \\d{2}:\\d{2}:\\d{2}\\.\\d+\\s+\\d+\\s+\\S+\\.go:\\d+\\]\\s*"));
+    QString lastErrorLine, errQuoted;
+    QStringList rest;
+    const auto lines = raw.split(QLatin1Char('\n'));
+    for (const QString& ln : lines) {
+        QString t = ln.trimmed();
+        if (t.isEmpty()) continue;
+        t.remove(glogHead);
+        if (t.startsWith(QLatin1String("error:")) || t.startsWith(QLatin1String("Error:")))
+            lastErrorLine = t;                       // kubectl 最终致命错误，信息量最大
+        else {
+            static const QRegularExpression errRe(QStringLiteral("err=\\\"([^\\\"]*)\\\""));
+            const auto m = errRe.match(t);
+            if (m.hasMatch() && errQuoted.isEmpty()) errQuoted = m.captured(1);
+            rest << t;
+        }
+    }
+    if (!lastErrorLine.isEmpty()) return lastErrorLine;
+    if (!errQuoted.isEmpty()) return errQuoted;
+    return rest.join(QLatin1Char(' '));
+}
+
+// kubectl 常见报错 → 中文友好提示（无匹配时返回剥头后的原文前 120 字符）
 static QString friendlyK8sError(const QString& raw) {
-    const QString e = raw.toLower();
+    const QString core = kubectlErrCore(raw);
+    const QString e = core.toLower();
+    if (e.isEmpty()) return QStringLiteral("kubectl 无输出");
     if (e.contains(QLatin1String("no configuration has been provided"))
         || e.contains(QLatin1String("stat $home/.kube/config")))
         return QStringLiteral("集群上下文连接失败：本机没有可用的 kubeconfig（$KUBECONFIG / ~/.kube/config）");
@@ -94,16 +123,28 @@ static QString friendlyK8sError(const QString& raw) {
         return QStringLiteral("集群上下文连接失败：kubeconfig 未设置 current-context，请在上方「集群」选择");
     if (e.contains(QLatin1String("does not exist")) && e.contains(QLatin1String("context")))
         return QStringLiteral("集群上下文连接失败：所选 context 不存在（kubeconfig 已变更），请重新选择集群");
+    // kubectl 连不上 API Server 的通用包装句式（真实原因在其内部，但处置一致）
+    if (e.contains(QLatin1String("couldn't get current server api group list"))
+        || e.contains(QLatin1String("to connect to server")))
+        return QStringLiteral("集群不可达：集群 API 地址连不通（检查 VPN/网络或集群是否在线）");
     if (e.contains(QLatin1String("connection refused")) || e.contains(QLatin1String("no such host"))
         || e.contains(QLatin1String("i/o timeout")) || e.contains(QLatin1String("context deadline exceeded"))
-        || e.contains(QLatin1String("network is unreachable")) || e.contains(QLatin1String("tls handshake timeout")))
+        || e.contains(QLatin1String("network is unreachable")) || e.contains(QLatin1String("tls handshake timeout"))
+        || e.contains(QLatin1String("connection reset")) || e.contains(QLatin1String("unexpected eof"))
+        || e.contains(QLatin1String("server closed")) || e.contains(QLatin1String("server unavailable")))
         return QStringLiteral("集群不可达：集群 API 地址连不通（检查 VPN/网络或集群是否在线）");
+    if (e.contains(QLatin1String("proxyconnect")))
+        return QStringLiteral("集群连接失败：系统代理无法连通（检查代理设置或为集群地址配置绕行）");
+    if (e.contains(QLatin1String("x509")) || e.contains(QLatin1String("certificate")))
+        return QStringLiteral("集群证书校验失败（证书变更/本机时间不准），确认集群地址或校准系统时间");
     if (e.contains(QLatin1String("you must be logged in")) || e.contains(QLatin1String("unauthorized"))
         || e.contains(QLatin1String("401")) || e.contains(QLatin1String("provide credentials")))
         return QStringLiteral("认证失败：凭证缺失或已过期，请重新登录获取集群凭证");
     if (e.contains(QLatin1String("forbidden")) || e.contains(QLatin1String("403")))
         return QStringLiteral("权限不足：当前身份无权执行该操作");
-    return raw.left(120);
+    if (e.contains(QLatin1String("no resources found")))
+        return QStringLiteral("没有找到资源");
+    return core.left(120);
 }
 
 static FieldDef combo(const char* key, const char* label, const QStringList& choices, const QString& def) {
@@ -1523,13 +1564,10 @@ private slots:
                 return;
             }
             if (code != 0) {
-                const QString err = QString::fromUtf8(*errBuf).trimmed().left(80);
-                flashBtn(btn, false, err.isEmpty()
-                                     ? QStringLiteral("kubectl 失败（退出码 %1）").arg(code)
-                                     : err);
-                setResHint(hint, err.isEmpty()
-                                     ? QStringLiteral("kubectl 失败（退出码 %1）").arg(code)
-                                     : friendlyK8sError(err), true);
+                // 先翻译后截断：提前截断会把 err="..." 的闭合引号截掉导致提取失败
+                const QString err = friendlyK8sError(QString::fromUtf8(*errBuf).trimmed());
+                flashBtn(btn, false, err);
+                setResHint(hint, err, true);
                 return;
             }
             // -o name 行格式：<resource>/<name>（可能带 api 组，如 deployment.apps/name）

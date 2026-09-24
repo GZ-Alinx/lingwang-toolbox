@@ -30,6 +30,7 @@ private:
     QStackedWidget* m_stack = nullptr;
     QLineEdit* m_search = nullptr;
     QToolButton* m_themeBtn = nullptr;
+    QPushButton* m_homeBtn = nullptr;
     QWidget* m_home = nullptr;
     QWidget* m_sidebar = nullptr;
     bool m_dark = true;
